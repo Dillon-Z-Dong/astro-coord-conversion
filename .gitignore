@@ -208,3 +208,23 @@ coverage/
 .env.test.local
 .env.production.local
 .env.local
+
+# Next.js build and cache artifacts
+react_frontend/.next
+
+# Dependency lock files
+react_frontend/package-lock.json
+react_frontend/yarn.lock
+
+# Tailwind CSS and PostCSS configs (optional, if you don't want them in version control)
+react_frontend/tailwind.config.js
+react_frontend/postcss.config.js
+
+# Node modules (if applicable)
+react_frontend/node_modules/
+
+# Log files
+react_frontend/npm-debug.log*
+react_frontend/yarn-debug.log*
+react_frontend/yarn-error.log*
+

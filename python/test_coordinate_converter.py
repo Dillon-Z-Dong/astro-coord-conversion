@@ -148,9 +148,7 @@ class TestCoordinateParser(unittest.TestCase):
 
     def test_round_trip_conversion(self):
         """
-        The old test required numeric equivalence at 1e-10. If we only care about
-        matching a certain decimal precision, let's do that. 
-        E.g. we want at least 5 decimal places in the final, or a max difference of 1e-7.
+        Test of round trip hmsdms -> deg -> hmsdms conversion
         """
         original = "12:34:56.789012345 +45:23:45.678901234"
         # 1) hmsdms -> degrees

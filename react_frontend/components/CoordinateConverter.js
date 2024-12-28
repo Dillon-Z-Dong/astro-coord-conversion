@@ -1,7 +1,13 @@
+// ./components/CoordinateConverter.js
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Download, Copy, AlertCircle } from 'lucide-react';
 import { raDecConverter } from '../utils/coordinateParser';
 
+/**
+ * Large-scale maps of typical rounding error for reference. We only use them
+ * as a base, then we re-scale to pick arcsec/mas/μas as appropriate.
+ */
 const PRECISION_MAP = {
   hmsdms: {
     0: "±7.5 arcsec (RA), ±0.5 arcsec (Dec)",
@@ -31,6 +37,7 @@ const PRECISION_MAP = {
   }
 };
 
+// For the precision dropdown
 const PRECISION_OPTIONS = [
   { value: "match", label: "Match input" },
   ...Array.from({ length: 11 }, (_, i) => ({
@@ -46,9 +53,9 @@ const FORMAT_OPTIONS = [
 ];
 
 const INTERNAL_DELIMITER_OPTIONS = [
-  { value: ':', label: 'Colons', example: '12:34:56.789' },
-  { value: 'hms', label: 'Letters', example: '12h34m56.789s' },
-  { value: ' ', label: 'Spaces', example: '12 34 56.789' }
+  { value: ':', label: 'Colons' },
+  { value: 'hms', label: 'Letters' },
+  { value: ' ', label: 'Spaces' }
 ];
 
 const DELIMITER_OPTIONS = [
@@ -58,86 +65,317 @@ const DELIMITER_OPTIONS = [
   { value: ' | ', label: 'Pipe' }
 ];
 
-const detectDelimiter = (line) => {
-  if (!line) return ' ';
-  if (line.includes('|')) return ' | ';
-  if (line.includes(',')) return ',';
-  if (line.includes('\t')) return '\t';
-  return ' ';
-};
+/**
+ * For single-value errors (e.g. "1.8 arcsec") we scale to keep the numeric
+ * in the range [0.1..999], switching among arcsec <-> mas <-> μas.
+ */
+function scaleErrorString(errStr) {
+  // e.g. "1.8 arcsec" or "0.075 mas"
+  // We'll remove a leading "±" if present, though typically we store that outside:
+  const plusMinusMatch = errStr.match(/^[+\-±]/) ? errStr[0] : ''; 
+  let noSign = errStr.replace(/^[+\-±]/, '').trim(); // e.g. "1.8 arcsec"
 
-const getExampleForFormat = (format, internalDelimiter = ':') => {
-  switch(format) {
+  const m = noSign.match(/^([\d.]+)\s*(arcsec|mas|μas)$/);
+  if (!m) {
+    // fallback: just return original
+    return errStr;
+  }
+  let numeric = parseFloat(m[1]);
+  let unit = m[2]; // "arcsec", "mas", "μas"
+
+  // We'll define a chain from largest to smallest: arcsec -> mas -> μas
+  const chain = ["arcsec", "mas", "μas"];
+
+  let idx = chain.indexOf(unit);
+  if (idx === -1) {
+    return errStr; // unknown
+  }
+
+  // While numeric < 0.1 and we can move to next smaller unit
+  while (numeric < 0.1 && idx < chain.length - 1) {
+    // e.g. arcsec => mas => multiply numeric by 1000
+    numeric *= 1000;
+    idx += 1;
+  }
+  // While numeric >= 1000 and we can move to next bigger unit
+  while (numeric >= 1000 && idx > 0) {
+    numeric /= 1000;
+    idx -= 1;
+  }
+
+  // Round to 3 decimal places to avoid weird floats
+  const scaled = parseFloat(numeric.toFixed(3));
+  const newUnit = chain[idx];
+  return `${plusMinusMatch}${scaled} ${newUnit}`;
+}
+
+/**
+ * Called for each RA/Dec precision in "degrees" or "hmsdms" to get a single-value error:
+ * e.g. "±1.8 arcsec", "±0.075 mas", etc. Then re-scale if needed.
+ */
+function getSingleError(fmt, precision, isRa) {
+  let p = Math.max(0, Math.min(10, parseInt(precision, 10) || 0));
+
+  if (fmt === 'degrees') {
+    // degrees uses PRECISION_MAP.degrees
+    const base = (PRECISION_MAP.degrees[p] || "").replace('±', '').trim();
+    // e.g. "180 arcsec"
+    return scaleErrorString(base);
+  } else {
+    // hmsdms => pick RA or Dec portion
+    const tokens = (PRECISION_MAP.hmsdms[p] || "").split(',');
+    // tokens e.g. ["±7.5 arcsec (RA)", " ±0.5 arcsec (Dec)"]
+    const idx = isRa ? 0 : 1;
+    const valStr = tokens[idx] || "";
+    // strip the "±" and the paren text
+    // e.g. "±7.5 arcsec (RA)" => "7.5 arcsec"
+    const clean = valStr.replace(/[±()]/g, '').replace('RA', '').replace('Dec', '').trim();
+    return scaleErrorString(clean);
+  }
+}
+
+/**
+ * Adjust RA/Dec precision for "match input" logic:
+ * - If converting from decimal degrees → hms/dms:
+ *   RA => (inPrec - 2), Dec => (inPrec - 3)
+ * - If from hms/dms → decimal degrees:
+ *   RA => (inPrec + 3), Dec => (inPrec + 3)
+ * - Otherwise, keep them as-is. Then clamp to [0..10].
+ */
+function computeMatchedPrecisions(inputFmt, outputFmt, raInPrec, decInPrec) {
+  let raOut = raInPrec;
+  let decOut = decInPrec;
+
+  if (inputFmt === 'degrees' && outputFmt === 'hmsdms') {
+    raOut = raInPrec - 2;
+    decOut = decInPrec - 3;
+  } else if (inputFmt === 'hmsdms' && outputFmt === 'degrees') {
+    raOut = raInPrec + 3;
+    decOut = decInPrec + 3;
+  }
+  // clamp
+  raOut = Math.min(Math.max(raOut, 0), 10);
+  decOut = Math.min(Math.max(decOut, 0), 10);
+
+  return { raOut, decOut };
+}
+
+function postprocessHmsDms(output, delimiter) {
+  if (delimiter !== 'hms') {
+    return output;
+  }
+  // RA pattern: (\d+):(\d+):(\d+(\.\d+)?)
+  let str = output.replace(
+    /\b(\d+):(\d+):(\d+(\.\d+)?)(?![.\d])\b/g,
+    (m, p1, p2, p3) => `${p1}h${p2}m${p3}s`
+  );
+  // Dec pattern: ([+\-]\d+):(\d+):(\d+(\.\d+)?)
+  str = str.replace(
+    /([+\-]\d+):(\d+):(\d+(\.\d+)?)/g,
+    (m, p1, p2, p3) => {
+      const sign = p1.charAt(0);
+      const dd = p1.slice(1);
+      return `${sign}${dd}d${p2}m${p3}s`;
+    }
+  );
+  return str;
+}
+
+/** 
+ * Strictly split output by the chosen delimiter so that comma, pipe, etc.
+ * do not become whitespace-based.
+ */
+function splitByOutputDelimiter(str, delimiter) {
+  if (delimiter === ' | ') {
+    return str.split(' | ');
+  } else if (delimiter === '\t') {
+    return str.split('\t');
+  } else if (delimiter === ',') {
+    return str.split(',');
+  } else {
+    // default is space
+    return str.trim().split(/\s+/);
+  }
+}
+
+/** Return the exact character to show between RA and Dec in the results panel. */
+function displayDelimiter(delim) {
+  if (delim === '\t') return '\t';
+  if (delim === ',') return ',';
+  if (delim === ' | ') return '|'; 
+  return ' ';
+}
+
+/** Provide a fallback example for a given inputFormat or outputFormat. */
+function getExampleForFormat(format, internalDelimiter = ':') {
+  switch (format) {
     case 'hmsdms':
-      return internalDelimiter === 'hms' 
-        ? ['12h34m56.789s', '+12d34m56.789s']
-        : [internalDelimiter === ' ' ? '12 34 56.789' : '12:34:56.789', 
-           internalDelimiter === ' ' ? '+12 34 56.789' : '+12:34:56.789'];
+      if (internalDelimiter === 'hms') {
+        return ['12h34m56.78s', '+12d34m56.78s'];
+      } else if (internalDelimiter === ' ') {
+        return ['12 34 56.78', '+12 34 56.78'];
+      } else {
+        return ['12:34:56.78', '+12:34:56.78'];
+      }
     case 'degrees':
-      return ['188.736621', '+12.582441'];
+      return ['188.7366', '+12.5824'];
     case 'casa':
-      return ['12:34:56.789', '+12.34.56.789'];
+      return ['12:34:56.78', '+12.34.56.78'];
     default:
       return ['', ''];
   }
-};
+}
 
 const CoordinateConverter = () => {
   const [inputText, setInputText] = useState('');
   const [inputFormat, setInputFormat] = useState('hmsdms');
   const [outputFormat, setOutputFormat] = useState('degrees');
   const [precision, setPrecision] = useState('match');
+
   const [selectedLines, setSelectedLines] = useState(new Set());
   const [results, setResults] = useState([]);
   const [hoveredLine, setHoveredLine] = useState(null);
   const [hoveredCopyType, setHoveredCopyType] = useState(null);
+
   const [outputDelimiter, setOutputDelimiter] = useState(' ');
   const [internalDelimiter, setInternalDelimiter] = useState(':');
-  const [hoveredExamplePart, setHoveredExamplePart] = useState(null);
 
-  // Detect input delimiter from first valid line
-  const detectedInputDelimiter = useMemo(() => {
-    const firstValidLine = inputText.split('\n').find(line => line.trim());
-    return detectDelimiter(firstValidLine);
+  // From the first valid input line, detect RA/Dec decimal digits
+  const [detectedRaPrecision, detectedDecPrecision] = useMemo(() => {
+    const firstLine = inputText.split('\n').find(line => line.trim());
+    if (!firstLine) return [0, 0];
+    const parts = firstLine.split(/[\s,|]+/).filter(Boolean);
+    if (parts.length < 2) return [0, 0];
+
+    // e.g. "123.4567" => 4 digits
+    const raDecs = (parts[0].split('.')[1] || '').length;
+    const decDecs = (parts[1].split('.')[1] || '').length;
+    return [raDecs, decDecs];
   }, [inputText]);
 
-  // Detect precision from first valid coordinate
-  const detectedPrecision = useMemo(() => {
-    const firstValidLine = inputText.split('\n').find(line => line.trim());
-    if (!firstValidLine) return 6; // default
-    const parts = firstValidLine.split(/[\s,|]+/).filter(Boolean);
-    if (parts.length < 2) return 6;
-    const precisionRA = Math.max(0, (parts[0].split('.')[1] || '').length);
-    const precisionDec = Math.max(0, (parts[1].split('.')[1] || '').length);
-    return Math.max(precisionRA, precisionDec);
-  }, [inputText]);
+  /**
+   * We'll also build an example input (based on inputFormat) and example output
+   * (based on outputFormat). These are purely illustrative.
+   */
+  const inputExample = useMemo(() => {
+    // We ignore user input for now; show a standard example
+    return getExampleForFormat(inputFormat, internalDelimiter);
+  }, [inputFormat, internalDelimiter]);
 
+  const outputExample = useMemo(() => {
+    // We'll attempt to convert the inputExample to the output format for realism
+    const mockLine = inputExample.join(' ');
+    try {
+      let out = raDecConverter(mockLine, {
+        inputFormat,
+        outputFormat,
+        internalDelimiter: (outputFormat === 'hmsdms') ? ':' : ' ',
+        raDecDelimiter: ' ',
+        raPrecision: 2,
+        decPrecision: 2
+      });
+      if (outputFormat === 'hmsdms' && internalDelimiter === 'hms') {
+        out = postprocessHmsDms(out, 'hms');
+      }
+      return out.trim().split(/\s+/);
+    } catch {
+      return getExampleForFormat(outputFormat, outputFormat === 'hmsdms' ? ':' : ' ');
+    }
+  }, [inputExample, inputFormat, outputFormat, internalDelimiter]);
+
+  /**
+   * Explanation for "match input" – includes separate RA/Dec rounding error
+   * for both input and output. E.g.:
+   *   Digits in first line: RA = 6, Dec = 6
+   *   Input rounding error (approx): RA: ±1.8 mas, Dec: ±1.8 mas
+   *   Output rounding error (approx): RA: ±0.75 mas, Dec: ±0.5 mas
+   */
+  const matchPrecisionExplanation = useMemo(() => {
+    if (precision !== 'match') return null;
+    // final RA/Dec out precision
+    const { raOut, decOut } = computeMatchedPrecisions(
+      inputFormat, outputFormat, detectedRaPrecision, detectedDecPrecision
+    );
+
+    const inputErrRA = getSingleError(inputFormat, detectedRaPrecision, true);
+    const inputErrDec = getSingleError(inputFormat, detectedDecPrecision, false);
+    const outErrRA = getSingleError(outputFormat, raOut, true);
+    const outErrDec = getSingleError(outputFormat, decOut, false);
+
+    return (
+      <div className="text-xs text-gray-600">
+        <p>Digits in first line: RA = {detectedRaPrecision}, Dec = {detectedDecPrecision}</p>
+        <p>Input rounding error (approx):</p>
+        <ul className="list-none pl-4">
+          <li>RA: ±{inputErrRA}</li>
+          <li>Dec: ±{inputErrDec}</li>
+        </ul>
+        <p>Output rounding error (approx):</p>
+        <ul className="list-none pl-4">
+          <li>RA: ±{outErrRA}</li>
+          <li>Dec: ±{outErrDec}</li>
+        </ul>
+      </div>
+    );
+  }, [
+    precision, inputFormat, outputFormat,
+    detectedRaPrecision, detectedDecPrecision
+  ]);
+
+  /**
+   * Convert all lines in the input whenever relevant settings change.
+   */
   const processInput = useCallback(() => {
     const lines = inputText.split('\n');
+
+    // Determine final RA/Dec precision
+    let raPrec, decPrec;
+    if (precision === 'match') {
+      const { raOut, decOut } = computeMatchedPrecisions(
+        inputFormat, outputFormat, detectedRaPrecision, detectedDecPrecision
+      );
+      raPrec = raOut;
+      decPrec = decOut;
+    } else {
+      const p = parseInt(precision, 10) || 0;
+      raPrec = p;
+      decPrec = p;
+    }
+
     const newResults = lines.map(line => {
-      if (!line.trim()) return { output: '', error: null };
-      
+      const trimmed = line.trim();
+      if (!trimmed) return { output: '', error: null };
+
       try {
-        const output = raDecConverter(line, {
+        let out = raDecConverter(trimmed, {
           inputFormat,
           outputFormat,
-          internalDelimiter: outputFormat === 'hmsdms' ? internalDelimiter : ':',
+          internalDelimiter: (outputFormat === 'hmsdms') ? ':' : ' ',
           raDecDelimiter: outputDelimiter,
-          raPrecision: precision === 'match' ? detectedPrecision : parseInt(precision),
-          decPrecision: precision === 'match' ? detectedPrecision : parseInt(precision)
+          raPrecision: raPrec,
+          decPrecision: decPrec
         });
-        return { output, error: null };
-      } catch (error) {
-        return { output: '', error: error.message };
+        // postprocess for letters
+        if (outputFormat === 'hmsdms' && internalDelimiter === 'hms') {
+          out = postprocessHmsDms(out, 'hms');
+        }
+        return { output: out, error: null };
+      } catch (err) {
+        return { output: '', error: err.message };
       }
     });
     setResults(newResults);
-  }, [inputText, inputFormat, outputFormat, precision, detectedPrecision, internalDelimiter, outputDelimiter]);
+  }, [
+    inputText, inputFormat, outputFormat,
+    precision, detectedRaPrecision, detectedDecPrecision,
+    internalDelimiter, outputDelimiter
+  ]);
 
   useEffect(() => {
     processInput();
   }, [processInput]);
 
+  // Toggling line selection
   const handleLineClick = (index) => {
     setSelectedLines(prev => {
       const newSet = new Set(prev);
@@ -150,6 +388,7 @@ const CoordinateConverter = () => {
     });
   };
 
+  // Copy all selected lines, or all lines if none selected
   const handleCopyAll = () => {
     const outputText = results
       .filter((_, i) => selectedLines.has(i) || selectedLines.size === 0)
@@ -158,6 +397,7 @@ const CoordinateConverter = () => {
     navigator.clipboard.writeText(outputText);
   };
 
+  // Download CSV
   const handleDownloadCSV = () => {
     const selectedData = inputText.split('\n').map((input, i) => {
       if (!selectedLines.has(i) && selectedLines.size > 0) return null;
@@ -189,11 +429,13 @@ const CoordinateConverter = () => {
   return (
     <div className="max-w-6xl mx-auto p-4 h-screen flex flex-col">
       <div className="h-[85vh] flex flex-col">
-        {/* Controls */}
-        <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded shadow">
-          <div className="space-y-4">
+
+        {/* Top Bar: 4 columns */}
+        <div className="grid grid-cols-4 gap-4 bg-white p-4 rounded shadow">
+          {/* Column 1: Input Format */}
+          <div className="space-y-2">
             <h3 className="font-medium">Input Format</h3>
-            <div className="space-y-2">
+            <div className="space-y-1">
               {FORMAT_OPTIONS.map(opt => (
                 <label key={opt.value} className="flex items-center space-x-2">
                   <input
@@ -209,164 +451,117 @@ const CoordinateConverter = () => {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="font-medium">Output Format</h3>
-              <div className="space-y-2 w-64">
-                <h4 className="text-sm font-medium">Output Precision</h4>
-                <select 
-                  value={precision} 
-                  onChange={e => setPrecision(e.target.value)}
-                  className="w-full border rounded px-2 py-1"
-                >
-                  {PRECISION_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
+          {/* Column 2: Output Format */}
+          <div className="space-y-2">
+            <h3 className="font-medium">Output Format</h3>
+            <div className="space-y-1">
+              {FORMAT_OPTIONS.map(opt => (
+                <label key={opt.value} className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    value={opt.value}
+                    checked={outputFormat === opt.value}
+                    onChange={e => setOutputFormat(e.target.value)}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Column 3: Output Delimiters */}
+          <div className="space-y-2">
+            <h3 className="font-medium">Output Delimiters</h3>
+            {outputFormat === 'hmsdms' && (
+              <div className="space-y-1">
+                <span className="font-medium text-sm">Internal:</span>
+                <div className="flex flex-wrap gap-2">
+                  {INTERNAL_DELIMITER_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setInternalDelimiter(opt.value)}
+                      className={`px-3 py-1 text-sm border rounded ${
+                        internalDelimiter === opt.value 
+                          ? 'bg-blue-100 border-blue-300' 
+                          : 'bg-white hover:bg-gray-50'
+                      }`}
+                    >
                       {opt.label}
-                    </option>
+                    </button>
                   ))}
-                </select>
-                <div className="text-xs text-gray-600">
-                  {precision === 'match' ? 
-                    `Matching input (${detectedPrecision} digits)` :
-                    (outputFormat === 'degrees' ? 
-                      PRECISION_MAP.degrees[precision] :
-                      PRECISION_MAP.hmsdms[precision])}
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="space-y-4">
-              <div className="space-y-2">
-                {FORMAT_OPTIONS.map(opt => (
-                  <label key={opt.value} className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      value={opt.value}
-                      checked={outputFormat === opt.value}
-                      onChange={e => setOutputFormat(e.target.value)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">{opt.label}</span>
-                  </label>
+            <div className="space-y-1">
+              <span className="font-medium text-sm">External:</span>
+              <div className="flex flex-wrap gap-2">
+                {DELIMITER_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setOutputDelimiter(opt.value)}
+                    className={`px-3 py-1 text-sm border rounded ${
+                      outputDelimiter === opt.value 
+                        ? 'bg-blue-100 border-blue-300' 
+                        : 'bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
                 ))}
               </div>
-              
-              <div className="space-y-4 pt-4">
-                {outputFormat === 'hmsdms' && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium">Internal Delimiter</h4>
-                    <div className="flex space-x-2">
-                      {INTERNAL_DELIMITER_OPTIONS.map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setInternalDelimiter(opt.value)}
-                          className={`px-3 py-1 text-sm border rounded ${
-                            internalDelimiter === opt.value 
-                              ? 'bg-blue-100 border-blue-300' 
-                              : 'bg-white hover:bg-gray-50'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">External Delimiter</h4>
-                  <div className="flex space-x-2">
-                    {DELIMITER_OPTIONS.map(opt => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setOutputDelimiter(opt.value)}
-                        className={`px-3 py-1 text-sm border rounded ${
-                          outputDelimiter === opt.value 
-                            ? 'bg-blue-100 border-blue-300' 
-                            : 'bg-white hover:bg-gray-50'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            </div>
+          </div>
+
+          {/* Column 4: Output Digits */}
+          <div className="space-y-2">
+            <h3 className="font-medium">Output Digits</h3>
+            <select 
+              value={precision} 
+              onChange={e => setPrecision(e.target.value)}
+              className="w-full border rounded px-2 py-1"
+            >
+              {PRECISION_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            
+            {precision === 'match' ? (
+              matchPrecisionExplanation
+            ) : (
+              <div className="text-xs text-gray-600">
+                {outputFormat === 'degrees' 
+                  ? PRECISION_MAP.degrees[precision] 
+                  : PRECISION_MAP.hmsdms[precision]}
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Examples Box (replaces old Format Example Area) */}
+        <div className="mt-3 mb-3 p-3 bg-gray-50 rounded text-sm text-gray-600">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+            <div>
+              <strong>Input Example:</strong>{' '}
+              <span className="font-mono">
+                {inputExample[0]} {inputExample[1]}
+              </span>
+            </div>
+            <div>
+              <strong>Output Example:</strong>{' '}
+              <span className="font-mono">
+                {outputExample[0]} {outputExample[1]}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Format Example Area */}
-        <div className="mt-6 mb-4 p-4 bg-gray-50 rounded grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <div className="text-sm">
-              <span className="font-medium">Input Format: </span>
-              <span>Detected delimiter: {detectedInputDelimiter === ' ' ? 'Space' : 
-                                     detectedInputDelimiter === '\t' ? 'Tab' : 
-                                     `'${detectedInputDelimiter}'`}</span>
-              <div 
-                className="font-mono mt-1 cursor-default"
-                onMouseLeave={() => setHoveredExamplePart(null)}
-              >
-                <span
-                  className={hoveredExamplePart === 'ra' ? 'bg-blue-100' : ''}
-                  onMouseEnter={() => setHoveredExamplePart('ra')}
-                >
-                  {inputText.split('\n')[0]?.split(/[\s,|]+/)[0] || getExampleForFormat(inputFormat)[0]}
-                </span>
-                <span
-                  className={hoveredExamplePart === 'delim' ? 'bg-blue-100' : ''}
-                  onMouseEnter={() => setHoveredExamplePart('delim')}
-                >
-                  {detectedInputDelimiter === '\t' ? '    ' : detectedInputDelimiter}
-                </span>
-                <span
-                  className={hoveredExamplePart === 'dec' ? 'bg-blue-100' : ''}
-                  onMouseEnter={() => setHoveredExamplePart('dec')}
-                >
-                  {inputText.split('\n')[0]?.split(/[\s,|]+/)[1] || getExampleForFormat(inputFormat)[1]}
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <div className="text-sm">
-              <span className="font-medium">Output Format: </span>
-              <span>Selected delimiter: {outputDelimiter === ' ' ? 'Space' : 
-                                     outputDelimiter === '\t' ? 'Tab' : 
-                                     outputDelimiter === ' | ' ? 'Pipe' :
-                                     `'${outputDelimiter}'`}</span>
-              <div 
-                className="font-mono mt-1 cursor-default"
-                onMouseLeave={() => setHoveredExamplePart(null)}
-              >
-                <span
-                  className={hoveredExamplePart === 'ra' ? 'bg-blue-100' : ''}
-                  onMouseEnter={() => setHoveredExamplePart('ra')}
-                >
-                  {getExampleForFormat(outputFormat, internalDelimiter)[0]}
-                </span>
-                <span
-                  className={hoveredExamplePart === 'delim' ? 'bg-blue-100' : ''}
-                  onMouseEnter={() => setHoveredExamplePart('delim')}
-                >
-                  {outputDelimiter === '\t' ? '    ' : outputDelimiter}
-                </span>
-                <span
-                  className={hoveredExamplePart === 'dec' ? 'bg-blue-100' : ''}
-                  onMouseEnter={() => setHoveredExamplePart('dec')}
-                >
-                  {getExampleForFormat(outputFormat, internalDelimiter)[1]}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Editor Area */}
+        {/* Main Editor Area */}
         <div className="flex gap-4 flex-grow overflow-hidden">
-          {/* Input Panel - 45% width */}
+          {/* Input Panel */}
           <div className="w-[45%] relative border rounded shadow-sm overflow-hidden">
             <div className="absolute left-0 top-0 bottom-0 w-12 bg-gray-100 border-r overflow-hidden">
               {inputText.split('\n').map((_, i) => (
@@ -394,12 +589,12 @@ const CoordinateConverter = () => {
                   outputPanel.scrollTop = e.target.scrollTop;
                 }
               }}
-              className="w-full h-full pl-14 pr-4 font-mono resize-none text-base [line-height:1.5rem] leading-6 whitespace-pre overflow-x-auto"
+              className="w-full h-full pl-14 pr-4 font-mono resize-none text-base leading-6 whitespace-pre overflow-x-auto"
               placeholder="Enter coordinates..."
             />
           </div>
 
-          {/* Output Panel - 45% width */}
+          {/* Output Panel */}
           <div className="w-[45%] relative border rounded shadow-sm overflow-hidden font-mono bg-white">
             <div className="h-full flex">
               <div className="w-12 bg-gray-100 border-r flex-none">
@@ -416,9 +611,10 @@ const CoordinateConverter = () => {
                   </div>
                 ))}
               </div>
-              <div 
+              <div
                 className="flex-grow overflow-y-auto overflow-x-auto output-scroll"
                 onScroll={e => {
+                  // keep input line-number panel in sync
                   const textarea = document.querySelector('textarea');
                   const inputLineNumbers = textarea?.previousSibling;
                   if (textarea) textarea.scrollTop = e.target.scrollTop;
@@ -432,7 +628,7 @@ const CoordinateConverter = () => {
                         key={i}
                         className={`
                           h-6 flex items-center px-4 whitespace-pre
-                          ${result.error ? 'bg-red-50' : ''}
+                          bg-red-50
                           ${selectedLines.has(i) ? 'bg-blue-100' : ''}
                           ${hoveredLine === i ? 'bg-blue-50' : ''}
                         `}
@@ -444,8 +640,10 @@ const CoordinateConverter = () => {
                       </div>
                     );
                   }
+                  const tokens = splitByOutputDelimiter(result.output, outputDelimiter);
+                  const raVal = tokens[0] || '';
+                  const decVal = tokens[1] || '';
 
-                  const [ra, dec] = result.output.split(/\s+/);
                   return (
                     <div
                       key={i}
@@ -456,11 +654,11 @@ const CoordinateConverter = () => {
                       `}
                     >
                       <span className={hoveredCopyType === 'ra' || hoveredCopyType === 'all' ? 'bg-blue-100' : ''}>
-                        {ra}
+                        {raVal}
                       </span>
-                      <span className="mx-1"> </span>
+                      <span>{displayDelimiter(outputDelimiter)}</span>
                       <span className={hoveredCopyType === 'dec' || hoveredCopyType === 'all' ? 'bg-blue-100' : ''}>
-                        {dec}
+                        {decVal}
                       </span>
                     </div>
                   );
@@ -469,7 +667,7 @@ const CoordinateConverter = () => {
             </div>
           </div>
 
-          {/* Action Buttons - Vertical Stack */}
+          {/* Action Buttons */}
           <div className="flex flex-col space-y-2">
             <button 
               onMouseEnter={() => setHoveredCopyType('all')}
@@ -487,7 +685,7 @@ const CoordinateConverter = () => {
                 const raValues = results
                   .filter((_, i) => selectedLines.has(i) || selectedLines.size === 0)
                   .filter(r => !r.error)
-                  .map(r => r.output.split(/\s+/)[0])
+                  .map(r => splitByOutputDelimiter(r.output, outputDelimiter)[0] || '')
                   .join('\n');
                 navigator.clipboard.writeText(raValues);
               }}
@@ -503,7 +701,7 @@ const CoordinateConverter = () => {
                 const decValues = results
                   .filter((_, i) => selectedLines.has(i) || selectedLines.size === 0)
                   .filter(r => !r.error)
-                  .map(r => r.output.split(/\s+/)[1])
+                  .map(r => splitByOutputDelimiter(r.output, outputDelimiter)[1] || '')
                   .join('\n');
                 navigator.clipboard.writeText(decValues);
               }}
@@ -523,6 +721,7 @@ const CoordinateConverter = () => {
         </div>
       </div>
 
+      {/* Footer */}
       <div className="text-center text-gray-500 py-4">
         Batch Coordinate Converter (Under Development)
         <div className="text-sm">Version 0.1.0</div>

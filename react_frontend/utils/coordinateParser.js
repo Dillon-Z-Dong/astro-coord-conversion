@@ -1,4 +1,4 @@
-// coordinateParser.js
+// ./utils/coordinateParser.js
 
 /**
  * Utility function: determines how many decimal places are in a numeric string.

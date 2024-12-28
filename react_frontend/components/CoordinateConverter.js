@@ -10,30 +10,30 @@ import { raDecConverter } from '../utils/coordinateParser';
  */
 const PRECISION_MAP = {
   hmsdms: {
-    0: "±7.5 arcsec (RA), ±0.5 arcsec (Dec)",
-    1: "±0.75 arcsec (RA), ±0.05 arcsec (Dec)",
-    2: "±0.075 arcsec (RA), ±0.005 arcsec (Dec)",
-    3: "±7.5 mas (RA), ±0.5 mas (Dec)",
-    4: "±0.75 mas (RA), ±0.05 mas (Dec)",
-    5: "±0.075 mas (RA), ±0.005 mas (Dec)",
-    6: "±7.5 μas (RA), ±0.5 μas (Dec)",
-    7: "±0.75 μas (RA), ±0.05 μas (Dec)",
-    8: "±0.075 μas (RA), ±0.005 μas (Dec)",
-    9: "±0.0075 μas (RA), ±0.0005 μas (Dec)",
-    10: "±0.00075 μas (RA), ±0.00005 μas (Dec)"
+    0: "± 7.5 arcsec (RA), ± 0.5 arcsec (Dec)",
+    1: "± 0.75 arcsec (RA), ± 50 mas (Dec)",
+    2: "± 75 mas (RA), ± 5 mas (Dec)",
+    3: "± 7.5 mas (RA), ± 0.5 mas (Dec)",
+    4: "± 0.75 mas (RA), ± 50 μas (Dec)",
+    5: "± 75 μas (RA), ± 5 μas (Dec)",
+    6: "± 7.5 μas (RA), ± 0.5 μas (Dec)",
+    7: "± 0.75 μas (RA), ± 0.05 μas (Dec)",
+    8: "± 0.075 μas (RA), ± 0.005 μas (Dec)",
+    9: "± 0.0075 μas (RA), ± 0.0005 μas (Dec)",
+    10: "± 0.00075 μas (RA), ± 0.00005 μas (Dec)"
   },
   degrees: {
-    0: "±1800 arcsec",
-    1: "±180 arcsec",
-    2: "±18 arcsec",
-    3: "±1.8 arcsec",
-    4: "±180 mas",
-    5: "±18 mas",
-    6: "±1.8 mas",
-    7: "±180 μas",
-    8: "±18 μas",
-    9: "±1.8 μas",
-    10: "±0.18 μas"
+    0: "± 0.5 deg",
+    1: "± 3 arcmin",
+    2: "± 18 arcsec",
+    3: "± 1.8 arcsec",
+    4: "± 0.18 arcsec",
+    5: "± 18 mas",
+    6: "± 1.8 mas",
+    7: "± 180 μas",
+    8: "± 18 μas",
+    9: "± 1.8 μas",
+    10: "± 0.18 μas"
   }
 };
 

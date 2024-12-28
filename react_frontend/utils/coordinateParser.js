@@ -154,7 +154,11 @@ function parseToDegrees(coordStr, isRa, inputFormat) {
   if (inputFormat === 'degrees') {
     const dotCount = (c.match(/\./g) || []).length;
     if (dotCount >= 2) {
-      throw new Error(`CASA dotted format (DD.MM.SS) not allowed with input_format='degrees': '${c}'`);
+      throw new Error(`Check input format (deg): ${c}`);
+    }
+    // Check for any HMS/DMS format indicators
+    if (c.includes(':') || /[hHdD°mM'sS"]/.test(c)) {
+      throw new Error(`Check input format (deg): ${c}`);
     }
   }
 
@@ -215,13 +219,13 @@ function parseRaColonStrict(raStr) {
  * Parse CASA dotted dec: "±DD.MM.SS(.ss)" => sign, dd, mm, ss => decimal deg.
  */
 function parseCasaDottedDec(decStr) {
-  // pattern = ^([+\-])(\d{1,3})\.(\d{1,2})\.(\d{1,2}(\.\d+)?)$
-  const pattern = /^([+\-])(\d{1,3})\.(\d{1,2})\.(\d{1,2}(\.\d+)?)$/;
+  // Modified pattern to make sign optional
+  const pattern = /^([+\-])?(\d{1,3})\.(\d{1,2})\.(\d{1,2}(\.\d+)?)$/;
   const m = decStr.match(pattern);
   if (!m) {
-    throw new Error(`Invalid CASA dec: '${decStr}' (should be ±DD.MM.SS(.ss))`);
+    throw new Error(`Invalid CASA dec: '${decStr}' (should be [±]DD.MM.SS(.ss))`);
   }
-  const signChar = m[1];
+  const signChar = m[1] || '+';  // Default to '+' if no sign present
   const d = parseFloat(m[2]);
   const mm = parseFloat(m[3]);
   const ssStr = m[4]; // includes decimals

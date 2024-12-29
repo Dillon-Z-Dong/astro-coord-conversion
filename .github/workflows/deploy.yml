@@ -21,13 +21,12 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          cache: npm
-          cache-dependency-path: react_frontend/package-lock.json
           
       - name: Install dependencies
         working-directory: ./react_frontend
-        run: npm ci
-        
+        run: |
+          npm clean-install
+          
       - name: Build
         working-directory: ./react_frontend
         run: npm run build

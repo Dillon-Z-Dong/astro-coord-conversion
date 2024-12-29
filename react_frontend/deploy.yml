@@ -11,30 +11,30 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
-      - name: Setup Node
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
-          
-      - name: Install dependencies
-        working-directory: ./react_frontend
-        run: |
-          npm clean-install
-          
+      
+      - name: Install Dependencies
+        run: cd react_frontend && npm install
+        
       - name: Build
-        working-directory: ./react_frontend
-        run: npm run build
+        run: cd react_frontend && npm run build
         
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v3
         with:
-          path: ./react_frontend/out
+          path: react_frontend/out
 
   deploy:
     environment:
@@ -45,4 +45,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4

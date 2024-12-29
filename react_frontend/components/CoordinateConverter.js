@@ -215,13 +215,14 @@ function getPlaceholderExamples(format) {
   switch (format) {
     case 'hmsdms':
       return [
-        'J2000 12:34:56.78 +12:34:56.78',
-        '12:34:56 12:34:56',
-        '1:2:3 -1:2:3'
+        'J2000 12:34:56.78, +12:34:56.78',
+        '12h34m56.78s -12d34m56',
+        '12 34 56 +12°34\'56\'\'',
+        '1 2 3 +1 2 3'
       ].join('\n');
     case 'degrees':
       return [
-        '188.7366 +12.5824',
+        '188.7366, +12.5824',
         '188.736600 12.582400',
         '10.5 -45.6'
       ].join('\n');
@@ -266,6 +267,87 @@ const CoordinateConverter = () => {
     return [raDecs, decDecs];
   }, [inputText]);
 
+  // Highlight style for hovering over lines
+  const highlightStyle = useMemo(() => {
+    if (hoveredLine === null || hoveredCopyType !== null) return {};
+    const lineHeight = 24; // 1.5rem = 24px to match the h-6 class used in output
+    return {
+      backgroundImage: `linear-gradient(
+        rgba(59, 130, 246, 0.1),
+        rgba(59, 130, 246, 0.1)
+      )`,
+      backgroundSize: `100% ${lineHeight}px`,
+      backgroundPosition: `0 ${hoveredLine * lineHeight}px`,
+      backgroundRepeat: 'no-repeat'
+    };
+  }, [hoveredLine, hoveredCopyType]);
+
+  // Modify the input handler to strip trailing empty lines
+  const handleInputChange = (e) => {
+    // Get the new value from the event
+    let newValue = e.target.value;
+    
+    // Strip trailing empty lines while preserving empty lines in the middle
+    newValue = newValue.replace(/[\n\r]+([\n\r]|\s)*$/, '');
+    
+    setInputText(newValue);
+  };
+
+  // Helper function to compute input stats
+  const getInputStats = useCallback(() => {
+    if (!inputText) return null;
+    
+    const totalLines = inputText.split('\n').filter(line => line.trim()).length;
+    const errorCount = results.filter(r => r.error).length;
+    
+    return {
+      totalLines,
+      errorCount
+    };
+  }, [inputText, results]);
+
+
+  // mouseHandler for the textarea
+  const handleTextareaHover = useCallback((e) => {
+    const lineHeight = 24; // 1.5rem = 24px
+    const rect = e.target.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    const lineIndex = Math.floor(relativeY / lineHeight);
+    
+    // Only set hover if within valid line range
+    if (lineIndex >= 0 && lineIndex < inputText.split('\n').length) {
+      setHoveredLine(lineIndex);
+    } else {
+      setHoveredLine(null);
+    }
+  }, [inputText]);
+
+  
+  const handleTextareaLeave = () => {
+    setHoveredLine(null);
+  };
+
+  // handler to make error message clickable (scrolling to first error)
+  const scrollToFirstError = useCallback(() => {
+    const firstErrorIndex = results.findIndex(r => r.error);
+    if (firstErrorIndex === -1) return;
+
+    // Get the line height (matches the existing 24px line height)
+    const lineHeight = 24;
+    const scrollTop = firstErrorIndex * lineHeight;
+
+    // Scroll both panels
+    const textarea = document.querySelector('textarea');
+    const outputPanel = document.querySelector('.output-scroll');
+    
+    if (textarea) textarea.scrollTop = scrollTop;
+    if (outputPanel) outputPanel.scrollTop = scrollTop;
+
+    // Also highlight the error line briefly
+    setHoveredLine(firstErrorIndex);
+    setTimeout(() => setHoveredLine(null), 2000);
+  }, [results]);
+
 
   /**
    * Explanation for "match input" – includes separate RA/Dec rounding error
@@ -279,7 +361,7 @@ const CoordinateConverter = () => {
     if (precision !== 'match' || !inputText.split('\n').find(line => line.trim())) {
       return (
         <div className="text-xs text-gray-600">
-          <p> Output precision determined by approximate rounding error of first input coordinate </p>
+          <p> Output precision matched to input precision </p>
         </div>
       );
     }
@@ -461,7 +543,7 @@ const CoordinateConverter = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-4 h-screen flex flex-col">
-      <div className="h-[85vh] flex flex-col space-y-20">
+      <div className="h-[85vh] flex flex-col">
 
         {/* Top Bar: 4 columns */}
         <div className="grid grid-cols-4 gap-4 bg-white p-4 rounded shadow">
@@ -576,6 +658,52 @@ const CoordinateConverter = () => {
           </div>
         </div>
 
+        {/* Messages above the panels */}
+        <div className="flex gap-0 items-end mb-0.5 mt-5">  
+          <div className="w-[45%] text-sm pl-12 font-italic min-h-[24px]">
+            <span className="text-gray-500 block">
+              {!inputText ? (
+                "Paste input coordinates below (one RA + Dec per line)"
+              ) : (
+                <>
+                  <span className="text-gray-700">
+                    {getInputStats().totalLines} input coordinate{getInputStats().totalLines !== 1 ? 's' : ''} [{inputFormat}]
+                  </span>
+                  {getInputStats().errorCount > 0 && (
+                    <button
+                      onClick={scrollToFirstError}
+                      className="text-red-500 ml-1 hover:underline focus:outline-none"
+                    >
+                      ({getInputStats().errorCount} error{getInputStats().errorCount !== 1 ? 's' : ''})
+                    </button>
+                  )}
+                </>
+              )}
+            </span>
+          </div>
+          <div className="w-[45%] text-sm text-gray-500 pl-8 mb-0.5 font-italic min-h-[24px]">
+          {!inputText ? (
+              'Output coordinates will appear here (based on selections above)'
+            ) : (
+              <>
+                Output format: {precision === 'match' ? (
+                  <>RA: {computeMatchedPrecisions(
+                    inputFormat, 
+                    outputFormat, 
+                    detectedRaPrecision, 
+                    detectedDecPrecision
+                  ).raOut} digits, Dec: {computeMatchedPrecisions(
+                    inputFormat, 
+                    outputFormat, 
+                    detectedRaPrecision, 
+                    detectedDecPrecision
+                  ).decOut} digits</>
+                ) : (
+                  `${precision} digits`
+                )} [{outputFormat}]</>
+            )}
+          </div>
+        </div>
 
         {/* Main Editor Area */}
         <div className="flex gap-4 flex-grow overflow-hidden">
@@ -613,7 +741,9 @@ const CoordinateConverter = () => {
             </div>
             <textarea
               value={inputText}
-              onChange={e => setInputText(e.target.value)}
+              onChange={handleInputChange}
+              onMouseMove={handleTextareaHover}
+              onMouseLeave={handleTextareaLeave}
               onScroll={e => {
                 const outputPanel = document.querySelector('.output-scroll');
                 if (outputPanel) {
@@ -622,6 +752,7 @@ const CoordinateConverter = () => {
               }}
               placeholder={getPlaceholderExamples(inputFormat, internalDelimiter)}
               className="w-full h-full pl-14 pr-4 font-mono resize-none text-base leading-6 whitespace-pre overflow-x-auto"
+              style={highlightStyle}
             />
           </div>
 
@@ -721,7 +852,7 @@ const CoordinateConverter = () => {
               className="flex items-center px-4 py-2 bg-white border rounded shadow-sm hover:bg-gray-50"
             >
               <Copy className="w-4 h-4 mr-2" />
-              Copy All
+              Copy all
             </button>
             <button 
               onMouseEnter={() => setHoveredCopyType('ra')}
@@ -768,8 +899,8 @@ const CoordinateConverter = () => {
 
       {/* Footer */}
       <div className="text-center text-gray-500 py-4">
-        Batch Coordinate Converter (Under Development)
-        <div className="text-sm">Version 0.1.0</div>
+        Batch Coordinate Converter version 0.1.0 (under development)
+        <div className="text-sm">Email Dillon if you have questions, comments, or suggestions</div>
       </div>
     </div>
   );

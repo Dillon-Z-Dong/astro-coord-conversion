@@ -4,6 +4,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Download, Copy, AlertCircle } from 'lucide-react';
 import { raDecConverter } from '../utils/coordinateParser';
 
+
+const MAX_ROWS = 5000; // Set a reasonable maximum that won't crash the browser
+
 /**
  * Large-scale maps of typical rounding error for reference. We only use them
  * as a base, then we re-scale to pick arcsec/mas/μas as appropriate.
@@ -284,11 +287,19 @@ const CoordinateConverter = () => {
 
   // Modify the input handler to strip trailing empty lines
   const handleInputChange = (e) => {
-    // Get the new value from the event
     let newValue = e.target.value;
     
     // Strip trailing empty lines while preserving empty lines in the middle
     newValue = newValue.replace(/[\n\r]+([\n\r]|\s)*$/, '');
+    
+    // Count number of lines
+    const lineCount = (newValue.match(/\n/g) || []).length + 1;
+    
+    if (lineCount > MAX_ROWS) {
+      // Optional: Show a warning to the user
+      alert(`Maximum input is ${MAX_ROWS} lines. Current input: ${lineCount} lines`);
+      return;
+    }
     
     setInputText(newValue);
   };
@@ -752,7 +763,15 @@ const CoordinateConverter = () => {
               }}
               placeholder={getPlaceholderExamples(inputFormat, internalDelimiter)}
               className="w-full h-full pl-14 pr-4 font-mono resize-none text-base leading-6 whitespace-pre overflow-x-auto"
-              style={highlightStyle}
+              style={{
+                ...highlightStyle,
+                maxHeight: '100%',
+                minHeight: '100%'
+              }}
+              spellCheck="false"
+              data-gramm="false"
+              data-gramm_editor="false"
+              data-enable-grammarly="false"
             />
           </div>
 

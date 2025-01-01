@@ -42,7 +42,7 @@ const PRECISION_MAP = {
 
 // For the precision dropdown
 const PRECISION_OPTIONS = [
-  { value: "match", label: "Automatic" },
+  { value: "match", label: "Match input" },
   ...Array.from({ length: 11 }, (_, i) => ({
     value: String(i),
     label: `${i} digits`
@@ -372,7 +372,7 @@ const CoordinateConverter = () => {
     if (precision !== 'match' || !inputText.split('\n').find(line => line.trim())) {
       return (
         <div className="text-xs text-gray-600">
-          <p> Output precision matched to input precision </p>
+          <p> Matched to precision of first input line </p>
         </div>
       );
     }
@@ -600,7 +600,7 @@ const CoordinateConverter = () => {
           <div className="space-y-2">
             <h3 className="font-medium">Output Delimiters</h3>
             <div className="space-y-1">
-              <span className="font-medium text-sm">External:</span>
+              <span className="font-medium text-sm">Coordinate:</span>
               <div className="flex flex-wrap gap-2">
                 {DELIMITER_OPTIONS.map(opt => (
                   <button
@@ -619,7 +619,7 @@ const CoordinateConverter = () => {
             </div>
             {outputFormat === 'hmsdms' && (
               <div className="space-y-1">
-                <span className="font-medium text-sm">Internal:</span>
+                <span className="font-medium text-sm">Component:</span>
                 <div className="flex flex-wrap gap-2">
                   {INTERNAL_DELIMITER_OPTIONS.map(opt => (
                     <button
@@ -674,11 +674,11 @@ const CoordinateConverter = () => {
           <div className="w-[45%] text-sm pl-12 font-italic min-h-[24px]">
             <span className="text-gray-500 block">
               {!inputText ? (
-                "Paste input coordinates below (one RA + Dec per line)"
+                "Input RA/Dec (one per line, many formats accepted)"
               ) : (
                 <>
                   <span className="text-gray-700">
-                    {getInputStats().totalLines} input coordinate{getInputStats().totalLines !== 1 ? 's' : ''} [{inputFormat}]
+                    {getInputStats().totalLines} input coordinate detected{getInputStats().totalLines !== 1 ? 's' : ''} [{inputFormat}]
                   </span>
                   {getInputStats().errorCount > 0 && (
                     <button
@@ -694,10 +694,10 @@ const CoordinateConverter = () => {
           </div>
           <div className="w-[45%] text-sm text-gray-500 pl-8 mb-0.5 font-italic min-h-[24px]">
           {!inputText ? (
-              'Output coordinates will appear here (based on selections above)'
+              'Output RA/Dec (formatted based on selections above)'
             ) : (
               <>
-                Output format: {precision === 'match' ? (
+                Requested output format: [{outputFormat}] [{precision === 'match' ? (
                   <>RA: {computeMatchedPrecisions(
                     inputFormat, 
                     outputFormat, 
@@ -711,7 +711,7 @@ const CoordinateConverter = () => {
                   ).decOut} digits</>
                 ) : (
                   `${precision} digits`
-                )} [{outputFormat}]</>
+                )}]</>
             )}
           </div>
         </div>
@@ -868,7 +868,7 @@ const CoordinateConverter = () => {
               onMouseEnter={() => setHoveredCopyType('all')}
               onMouseLeave={() => setHoveredCopyType(null)}
               onClick={handleCopyAll}
-              className="flex items-center px-4 py-2 bg-white border rounded shadow-sm hover:bg-gray-50"
+              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
             >
               <Copy className="w-4 h-4 mr-2" />
               Copy all
@@ -884,7 +884,7 @@ const CoordinateConverter = () => {
                   .join('\n');
                 navigator.clipboard.writeText(raValues);
               }}
-              className="flex items-center px-4 py-2 bg-white border rounded shadow-sm hover:bg-gray-50"
+              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
             >
               <Copy className="w-4 h-4 mr-2" />
               Copy RA
@@ -900,14 +900,14 @@ const CoordinateConverter = () => {
                   .join('\n');
                 navigator.clipboard.writeText(decValues);
               }}
-              className="flex items-center px-4 py-2 bg-white border rounded shadow-sm hover:bg-gray-50"
+              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
             >
               <Copy className="w-4 h-4 mr-2" />
               Copy Dec
             </button>
             <button 
               onClick={handleDownloadCSV}
-              className="flex items-center px-4 py-2 bg-white border rounded shadow-sm hover:bg-gray-50"
+              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
             >
               <Download className="w-4 h-4 mr-2" />
               Download CSV
@@ -918,8 +918,17 @@ const CoordinateConverter = () => {
 
       {/* Footer */}
       <div className="text-center text-gray-500 py-4">
-        Batch Coordinate Converter version 0.1.0 (under development)
-        <div className="text-sm">Email Dillon if you have questions, comments, or suggestions</div>
+      Batch Astronomical Cordinate Converter v1.0
+      <br />
+      Source code available on {' '}
+        <a 
+          href="https://github.com/Dillon-Z-Dong/astro-coord-conversion" 
+          className="underline hover:text-gray-700"
+          target="_blank" 
+          rel="noopener noreferrer"
+        >
+          Github
+        </a>
       </div>
     </div>
   );

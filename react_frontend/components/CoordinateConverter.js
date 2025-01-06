@@ -3,70 +3,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Download, Copy, AlertCircle } from 'lucide-react';
 import { raDecConverter } from '../utils/coordinateParser';
+import { TopBar } from './TopBar';
+import { useConverterOptions } from '../hooks/useConverterOptions';
 
 
 const MAX_ROWS = 5000; // Set a reasonable maximum that won't crash the browser
-
-/**
- * Large-scale maps of typical rounding error for reference. We only use them
- * as a base, then we re-scale to pick arcsec/mas/μas as appropriate.
- */
-const PRECISION_MAP = {
-  hmsdms: {
-    0: "± 7.5 arcsec (RA), ± 0.5 arcsec (Dec)",
-    1: "± 0.75 arcsec (RA), ± 50 mas (Dec)",
-    2: "± 75 mas (RA), ± 5 mas (Dec)",
-    3: "± 7.5 mas (RA), ± 0.5 mas (Dec)",
-    4: "± 0.75 mas (RA), ± 50 μas (Dec)",
-    5: "± 75 μas (RA), ± 5 μas (Dec)",
-    6: "± 7.5 μas (RA), ± 0.5 μas (Dec)",
-    7: "± 0.75 μas (RA), ± 0.05 μas (Dec)",
-    8: "± 0.075 μas (RA), ± 0.005 μas (Dec)",
-    9: "± 0.0075 μas (RA), ± 0.0005 μas (Dec)",
-    10: "± 0.00075 μas (RA), ± 0.00005 μas (Dec)"
-  },
-  degrees: {
-    0: "± 0.5 deg",
-    1: "± 3 arcmin",
-    2: "± 18 arcsec",
-    3: "± 1.8 arcsec",
-    4: "± 0.18 arcsec",
-    5: "± 18 mas",
-    6: "± 1.8 mas",
-    7: "± 180 μas",
-    8: "± 18 μas",
-    9: "± 1.8 μas",
-    10: "± 0.18 μas "
-  }
-};
-
-// For the precision dropdown
-const PRECISION_OPTIONS = [
-  { value: "match", label: "Match input" },
-  ...Array.from({ length: 11 }, (_, i) => ({
-    value: String(i),
-    label: `${i} digits`
-  }))
-];
-
-const FORMAT_OPTIONS = [
-  { value: 'hmsdms', label: 'HMS/DMS' },
-  { value: 'degrees', label: 'Decimal Degrees' },
-  { value: 'casa', label: 'CASA Format' }
-];
-
-const INTERNAL_DELIMITER_OPTIONS = [
-  { value: ':', label: 'Colons' },
-  { value: 'hms', label: 'Letters' },
-  { value: ' ', label: 'Spaces' }
-];
-
-const DELIMITER_OPTIONS = [
-  { value: ' ', label: 'Space' },
-  { value: ',', label: 'Comma' },
-  { value: '\t', label: 'Tab' },
-  { value: ' | ', label: 'Pipe' }
-];
 
 /**
  * For single-value errors (e.g. "1.8 arcsec") we scale to keep the numeric
@@ -243,18 +184,22 @@ function getPlaceholderExamples(format) {
 
 const CoordinateConverter = () => {
   const [inputText, setInputText] = useState('');
-  const [inputFormat, setInputFormat] = useState('hmsdms');
-  const [outputFormat, setOutputFormat] = useState('degrees');
-  const [precision, setPrecision] = useState('match');
-
   const [selectedLines, setSelectedLines] = useState(new Set());
   const [results, setResults] = useState([]);
   const [hoveredLine, setHoveredLine] = useState(null);
   const [hoveredCopyType, setHoveredCopyType] = useState(null);
-
-  const [outputDelimiter, setOutputDelimiter] = useState(' ');
-  const [internalDelimiter, setInternalDelimiter] = useState(':');
   const [virtualLineNumbers, setVirtualLineNumbers] = useState([]);
+
+  const {
+    inputFormat,
+    outputFormat,
+    precision,
+    outputDelimiter,
+    internalDelimiter,
+    converterOptions,
+    precisionExplanation,
+    ...optionSetters
+  } = useConverterOptions();
 
 
   // From the first valid input line, detect RA/Dec decimal digits
@@ -405,6 +350,7 @@ const CoordinateConverter = () => {
   /**
    * Convert all lines in the input whenever relevant settings change.
    */
+  // Update processInput to use converterOptions
   const processInput = useCallback(() => {
     const lines = inputText.split('\n');
 
@@ -428,10 +374,7 @@ const CoordinateConverter = () => {
 
       try {
         let out = raDecConverter(trimmed, {
-          inputFormat,
-          outputFormat,
-          internalDelimiter: (outputFormat === 'hmsdms') ? ':' : ' ',
-          raDecDelimiter: outputDelimiter,
+          ...converterOptions,
           raPrecision: raPrec,
           decPrecision: decPrec
         });
@@ -446,9 +389,13 @@ const CoordinateConverter = () => {
     });
     setResults(newResults);
   }, [
-    inputText, inputFormat, outputFormat,
-    precision, detectedRaPrecision, detectedDecPrecision,
-    internalDelimiter, outputDelimiter
+    inputText,
+    converterOptions,
+    precision,
+    detectedRaPrecision,
+    detectedDecPrecision,
+    outputFormat,
+    internalDelimiter
   ]);
 
   useEffect(() => {
@@ -556,118 +503,18 @@ const CoordinateConverter = () => {
     <div className="max-w-6xl mx-auto p-4 h-screen flex flex-col">
       <div className="h-[85vh] flex flex-col">
 
-        {/* Top Bar: 4 columns */}
-        <div className="grid grid-cols-4 gap-4 bg-white p-4 rounded shadow">
-          {/* Column 1: Input Format */}
-          <div className="space-y-2">
-            <h3 className="font-medium">Input Format</h3>
-            <div className="space-y-1">
-              {FORMAT_OPTIONS.map(opt => (
-                <label key={opt.value} className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    value={opt.value}
-                    checked={inputFormat === opt.value}
-                    onChange={e => setInputFormat(e.target.value)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm">{opt.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Column 2: Output Format */}
-          <div className="space-y-2">
-            <h3 className="font-medium">Output Format</h3>
-            <div className="space-y-1">
-              {FORMAT_OPTIONS.map(opt => (
-                <label key={opt.value} className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    value={opt.value}
-                    checked={outputFormat === opt.value}
-                    onChange={e => setOutputFormat(e.target.value)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm">{opt.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Column 3: Output Delimiters */}
-          <div className="space-y-2">
-            <h3 className="font-medium">Output Delimiters</h3>
-            <div className="space-y-1">
-              <span className="font-medium text-sm">Coordinate:</span>
-              <div className="flex flex-wrap gap-2">
-                {DELIMITER_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setOutputDelimiter(opt.value)}
-                    className={`px-1.5 py-1 text-sm border rounded ${
-                      outputDelimiter === opt.value 
-                        ? 'bg-blue-100 border-blue-300' 
-                        : 'bg-white hover:bg-gray-50'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {outputFormat === 'hmsdms' && (
-              <div className="space-y-1">
-                <span className="font-medium text-sm">Component:</span>
-                <div className="flex flex-wrap gap-2">
-                  {INTERNAL_DELIMITER_OPTIONS.map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setInternalDelimiter(opt.value)}
-                      className={`px-1.5 py-1 text-sm border rounded ${
-                        internalDelimiter === opt.value 
-                          ? 'bg-blue-100 border-blue-300' 
-                          : 'bg-white hover:bg-gray-50'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Column 4: Output Digits */}
-          <div className="space-y-2">
-            <h3 className="font-medium">Output Precision</h3>
-            <select 
-              value={precision} 
-              onChange={e => setPrecision(e.target.value)}
-              className="w-full border rounded px-2 py-1"
-            >
-              {PRECISION_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            
-            {precision === 'match' ? (
-              matchPrecisionExplanation
-            ) : (
-              <div className="text-xs text-gray-600">
-                <p>Fixed {precision} digit precision [{outputFormat}]:</p>
-                <p className="pl-4">
-                  {outputFormat === 'degrees' 
-                    ? PRECISION_MAP.degrees[precision] 
-                    : PRECISION_MAP.hmsdms[precision]}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Top bar where user enters desired state variables */}
+      <TopBar 
+          options={{
+            inputFormat,
+            outputFormat,
+            outputDelimiter,
+            internalDelimiter,
+            precision,
+            precisionExplanation
+          }}
+          onOptionsChange={optionSetters}
+        />
 
         {/* Messages above the panels */}
         <div className="flex gap-0 items-end mb-0.5 mt-5">  

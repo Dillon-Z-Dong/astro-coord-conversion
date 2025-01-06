@@ -1,17 +1,19 @@
 // ./components/CoordinateConverter.js
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Download, Copy, AlertCircle } from 'lucide-react';
 import { raDecConverter } from '../utils/coordinateParser';
 import { TopBar } from './TopBar';
 import { useConverterOptions } from '../hooks/useConverterOptions';
 import { getSingleError, computeMatchedPrecisions, scaleErrorString } from '../utils/precisionHandling';
 import { 
   postprocessHmsDms, 
-  splitByOutputDelimiter, 
-  displayDelimiter,
   getPlaceholderExamples 
 } from '../utils/formatHandling';
+import { ActionButtons } from './ActionButtons';
+import { Messages } from './Messages';
+import { InputEditor } from './InputEditor';
+import { OutputPanel } from './OutputPanel';
+import { useSyncedScroll } from '../hooks/useSyncedScroll';
 
 const MAX_ROWS = 5000; // Set a reasonable maximum that won't crash the browser
 
@@ -22,6 +24,7 @@ const CoordinateConverter = () => {
   const [hoveredLine, setHoveredLine] = useState(null);
   const [hoveredCopyType, setHoveredCopyType] = useState(null);
   const [virtualLineNumbers, setVirtualLineNumbers] = useState([]);
+  const { handleInputScroll, handleOutputScroll } = useSyncedScroll();
 
   const {
     inputFormat,
@@ -63,24 +66,6 @@ const CoordinateConverter = () => {
     };
   }, [hoveredLine, hoveredCopyType]);
 
-  // Modify the input handler to strip trailing empty lines
-  const handleInputChange = (e) => {
-    let newValue = e.target.value;
-    
-    // Strip trailing empty lines while preserving empty lines in the middle
-    newValue = newValue.replace(/[\n\r]+([\n\r]|\s)*$/, '');
-    
-    // Count number of lines
-    const lineCount = (newValue.match(/\n/g) || []).length + 1;
-    
-    if (lineCount > MAX_ROWS) {
-      // Optional: Show a warning to the user
-      alert(`Maximum input is ${MAX_ROWS} lines. Current input: ${lineCount} lines`);
-      return;
-    }
-    
-    setInputText(newValue);
-  };
 
   // Helper function to compute input stats
   const getInputStats = useCallback(() => {
@@ -254,14 +239,6 @@ const CoordinateConverter = () => {
     });
   };
 
-  // Copy all selected lines, or all lines if none selected
-  const handleCopyAll = () => {
-    const outputText = results
-      .filter((_, i) => selectedLines.has(i) || selectedLines.size === 0)
-      .map(r => r.output)
-      .join('\n');
-    navigator.clipboard.writeText(outputText);
-  };
 
   // Convert placeholder examples using the current settings
   const processedExamples = useMemo(() => {
@@ -305,39 +282,22 @@ const CoordinateConverter = () => {
   }, [inputFormat, outputFormat, precision, internalDelimiter, outputDelimiter]);
 
 
-  // Download CSV
-  const handleDownloadCSV = () => {
-    const selectedData = results
-      .filter((_, i) => selectedLines.has(i) || selectedLines.size === 0)
-      .map(result => {
-        if (!result.output) return null;
-        const [ra, dec] = splitByOutputDelimiter(result.output, outputDelimiter);
-        return { ra: ra || '', dec: dec || '' };
-      })
-      .filter(Boolean);
-  
-    const csv = [
-      ['RA', 'Dec'],
-      ...selectedData.map(d => [d.ra, d.dec])
-    ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-  
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'coordinates.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+   // Compute matched precisions once for both processInput and Messages
+   const matchedPrecisions = useMemo(() => {
+    if (precision !== 'match') return { raOut: precision, decOut: precision };
+    return computeMatchedPrecisions(
+      inputFormat, 
+      outputFormat, 
+      detectedRaPrecision, 
+      detectedDecPrecision
+    );
+  }, [precision, inputFormat, outputFormat, detectedRaPrecision, detectedDecPrecision]);
+
 
   return (
     <div className="max-w-6xl mx-auto p-4 h-screen flex flex-col">
       <div className="h-[85vh] flex flex-col">
-
-      {/* Top bar where user enters desired state variables */}
-      <TopBar 
+        <TopBar 
           options={{
             inputFormat,
             outputFormat,
@@ -349,266 +309,45 @@ const CoordinateConverter = () => {
           onOptionsChange={optionSetters}
         />
 
-        {/* Messages above the panels */}
-        <div className="flex gap-0 items-end mb-0.5 mt-5">  
-          <div className="w-[45%] text-sm pl-12 font-italic min-h-[24px]">
-            <span className="text-gray-500 block">
-              {!inputText ? (
-                "Input RA/Dec (one per line, many formats accepted)"
-              ) : (
-                <>
-                  <span className="text-gray-700">
-                    {getInputStats().totalLines} input coordinate detected{getInputStats().totalLines !== 1 ? 's' : ''} [{inputFormat}]
-                  </span>
-                  {getInputStats().errorCount > 0 && (
-                    <button
-                      onClick={scrollToFirstError}
-                      className="text-red-500 ml-1 hover:underline focus:outline-none"
-                    >
-                      ({getInputStats().errorCount} error{getInputStats().errorCount !== 1 ? 's' : ''})
-                    </button>
-                  )}
-                </>
-              )}
-            </span>
-          </div>
-          <div className="w-[45%] text-sm text-gray-500 pl-8 mb-0.5 font-italic min-h-[24px]">
-          {!inputText ? (
-              'Output RA/Dec (formatted based on selections above)'
-            ) : (
-              <>
-                Requested output format: [{outputFormat}] [{precision === 'match' ? (
-                  <>RA: {computeMatchedPrecisions(
-                    inputFormat, 
-                    outputFormat, 
-                    detectedRaPrecision, 
-                    detectedDecPrecision
-                  ).raOut} digits, Dec: {computeMatchedPrecisions(
-                    inputFormat, 
-                    outputFormat, 
-                    detectedRaPrecision, 
-                    detectedDecPrecision
-                  ).decOut} digits</>
-                ) : (
-                  `${precision} digits`
-                )}]</>
-            )}
-          </div>
-        </div>
+        <Messages 
+          inputText={inputText}
+          inputFormat={inputFormat}
+          outputFormat={outputFormat}
+          precision={precision}
+          results={results}
+          onErrorClick={scrollToFirstError}
+          matchedPrecisions={matchedPrecisions}
+        />
 
-        {/* Main Editor Area */}
         <div className="flex gap-4 flex-grow overflow-hidden">
-          {/* Input Panel */}
-          <div className="w-[45%] relative border rounded shadow-sm overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-12 bg-gray-100 border-r overflow-hidden">
-              {/* Line numbers for actual input */}
-              {inputText ? 
-                inputText.split('\n').map((_, i) => (
-                  <div
-                    key={i}
-                    className={`
-                      px-2 cursor-pointer text-right text-gray-500 leading-6 text-base
-                      ${selectedLines.has(i) ? 'bg-blue-100' : ''}
-                      ${hoveredLine === i ? 'bg-blue-50' : ''}
-                    `}
-                    onClick={() => handleLineClick(i)}
-                    onMouseEnter={() => setHoveredLine(i)}
-                    onMouseLeave={() => setHoveredLine(null)}
-                  >
-                    {i + 1}
-                  </div>
-                ))
-                : 
-                /* Line numbers for placeholder */
-                getPlaceholderExamples(inputFormat, internalDelimiter).split('\n').map((_, i) => (
-                  <div
-                    key={i}
-                    className="px-2 text-right text-gray-300 leading-6 text-base"
-                  >
-                    {i + 1}
-                  </div>
-                ))
-              }
-            </div>
-            <textarea
-              value={inputText}
-              onChange={handleInputChange}
-              onMouseMove={handleTextareaHover}
-              onMouseLeave={handleTextareaLeave}
-              onScroll={e => {
-                const outputPanel = document.querySelector('.output-scroll');
-                if (outputPanel) {
-                  outputPanel.scrollTop = e.target.scrollTop;
-                }
-              }}
-              placeholder={getPlaceholderExamples(inputFormat, internalDelimiter)}
-              className="w-full h-full pl-14 pr-4 font-mono resize-none text-base leading-6 whitespace-pre overflow-x-auto"
-              style={{
-                ...highlightStyle,
-                maxHeight: '100%',
-                minHeight: '100%'
-              }}
-              spellCheck="false"
-              data-gramm="false"
-              data-gramm_editor="false"
-              data-enable-grammarly="false"
-            />
-          </div>
+          <InputEditor 
+            inputText={inputText}
+            inputFormat={inputFormat}
+            internalDelimiter={internalDelimiter}
+            hoveredLine={hoveredLine}
+            onInputChange={setInputText}
+            onHover={setHoveredLine}
+            onHoverEnd={() => setHoveredLine(null)}
+            onScroll={handleInputScroll}
+          />
 
-                    {/* Output Panel */}
-                    <div className="w-[45%] relative border rounded shadow-sm overflow-hidden font-mono bg-white">
-            <div className="h-full flex">
-              <div className="w-12 bg-gray-100 border-r flex-none overflow-hidden">
-                {/* Line numbers for actual output or placeholder */}
-                {inputText ? 
-                  virtualLineNumbers.map((num, i) => (
-                    <div
-                      key={i}
-                      className={`
-                        px-2 text-right text-gray-500 leading-6 text-base
-                        ${selectedLines.has(i) ? 'bg-blue-100' : ''}
-                        ${hoveredLine === i ? 'bg-blue-50' : ''}
-                      `}
-                    >
-                      {num}
-                    </div>
-                  ))
-                  :
-                  getPlaceholderExamples(inputFormat, internalDelimiter).split('\n').map((_, i) => (
-                    <div
-                      key={i}
-                      className="px-2 text-right text-gray-300 leading-6 text-base"
-                    >
-                      {i + 1}
-                    </div>
-                  ))
-                }
-              </div>
-              <div
-                className="flex-grow overflow-y-auto overflow-x-auto output-scroll"
-                onScroll={e => {
-                  const textarea = document.querySelector('textarea');
-                  const inputLineNumbers = textarea?.previousSibling;
-                  const outputLineNumbers = e.target.previousSibling;
-                  
-                  if (textarea) textarea.scrollTop = e.target.scrollTop;
-                  if (inputLineNumbers) inputLineNumbers.scrollTop = e.target.scrollTop;
-                  if (outputLineNumbers) outputLineNumbers.scrollTop = e.target.scrollTop;
-                }}
-              >
-                {inputText ? (
-                  results.map((result, i) => (
-                    <div
-                      key={i}
-                      className={`
-                        h-6 flex items-center px-4 whitespace-pre
-                        ${selectedLines.has(i) ? 'bg-blue-100' : ''}
-                        ${hoveredLine === i ? 'bg-blue-50' : ''}
-                        ${result.error ? 'text-red-500' : ''}
-                      `}
-                      onClick={() => handleLineClick(i)}
-                      onMouseEnter={() => setHoveredLine(i)}
-                      onMouseLeave={() => setHoveredLine(null)}
-                    >
-                      {result.error ? (
-                        <div className="flex items-center">
-                          <AlertCircle className="w-4 h-4 mr-2" />
-                          {result.error}
-                        </div>
-                      ) : (
-                        result.output
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  // Show processed placeholder examples when there's no input
-                  processedExamples.map((example, i) => {
-                    const tokens = example.split(/[\s,|]+/).filter(Boolean);
-                    const raVal = tokens[0] || '';
-                    const decVal = tokens[1] || '';
-                    const delim = displayDelimiter(outputDelimiter);
+          <OutputPanel 
+            inputText={inputText}
+            results={results}
+            inputFormat={inputFormat}
+            outputDelimiter={outputDelimiter}
+            hoveredLine={hoveredLine}
+            onHover={setHoveredLine}
+            onHoverEnd={() => setHoveredLine(null)}
+            onScroll={handleOutputScroll}
+          />
 
-                    return (
-                      <div
-                        key={i}
-                        className="h-6 flex items-center px-4 whitespace-pre text-gray-300"
-                      >
-                        {raVal}{delim}{decVal}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col space-y-2">
-            <button 
-              onMouseEnter={() => setHoveredCopyType('all')}
-              onMouseLeave={() => setHoveredCopyType(null)}
-              onClick={handleCopyAll}
-              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Copy all
-            </button>
-            <button 
-              onMouseEnter={() => setHoveredCopyType('ra')}
-              onMouseLeave={() => setHoveredCopyType(null)}
-              onClick={() => {
-                const raValues = results
-                  .filter((_, i) => selectedLines.has(i) || selectedLines.size === 0)
-                  .filter(r => !r.error)
-                  .map(r => splitByOutputDelimiter(r.output, outputDelimiter)[0] || '')
-                  .join('\n');
-                navigator.clipboard.writeText(raValues);
-              }}
-              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Copy RA
-            </button>
-            <button 
-              onMouseEnter={() => setHoveredCopyType('dec')}
-              onMouseLeave={() => setHoveredCopyType(null)}
-              onClick={() => {
-                const decValues = results
-                  .filter((_, i) => selectedLines.has(i) || selectedLines.size === 0)
-                  .filter(r => !r.error)
-                  .map(r => splitByOutputDelimiter(r.output, outputDelimiter)[1] || '')
-                  .join('\n');
-                navigator.clipboard.writeText(decValues);
-              }}
-              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Copy Dec
-            </button>
-            <button 
-              onClick={handleDownloadCSV}
-              className="flex items-center justify-center px-1.5 py-1 bg-white border rounded shadow-sm hover:bg-gray-50"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download CSV
-            </button>
-          </div>
+          <ActionButtons 
+            results={results}
+            outputDelimiter={outputDelimiter}
+            onHoverChange={setHoveredCopyType}
+          />
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="text-center text-gray-500 py-4">
-      Batch Astronomical Cordinate Converter v1.0
-      <br />
-      Source code available on {' '}
-        <a 
-          href="https://github.com/Dillon-Z-Dong/astro-coord-conversion" 
-          className="underline hover:text-gray-700"
-          target="_blank" 
-          rel="noopener noreferrer"
-        >
-          Github
-        </a>
       </div>
     </div>
   );

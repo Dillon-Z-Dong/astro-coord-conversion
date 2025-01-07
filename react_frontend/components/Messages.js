@@ -6,8 +6,7 @@ export function Messages({
   outputFormat,
   precision,
   results,
-  onErrorClick,
-  matchedPrecisions  // { raOut, decOut }
+  matchedPrecisions
 }) {
   // Helper function to compute input stats
   const getInputStats = () => {
@@ -20,6 +19,23 @@ export function Messages({
       totalLines,
       errorCount
     };
+  };
+
+  // Moved from CoordinateConverter
+  const scrollToFirstError = () => {
+    const firstErrorIndex = results.findIndex(r => r.error);
+    if (firstErrorIndex === -1) return;
+
+    // Get the line height (matches the existing 24px line height)
+    const lineHeight = 24;
+    const scrollTop = firstErrorIndex * lineHeight;
+
+    // Scroll both panels
+    const textarea = document.querySelector('textarea');
+    const outputPanel = document.querySelector('.output-scroll');
+    
+    if (textarea) textarea.scrollTop = scrollTop;
+    if (outputPanel) outputPanel.scrollTop = scrollTop;
   };
 
   const stats = getInputStats();
@@ -38,7 +54,7 @@ export function Messages({
               </span>
               {stats.errorCount > 0 && (
                 <button
-                  onClick={onErrorClick}
+                  onClick={scrollToFirstError}  // Now using local function
                   className="text-red-500 ml-1 hover:underline focus:outline-none"
                 >
                   ({stats.errorCount} error{stats.errorCount !== 1 ? 's' : ''})

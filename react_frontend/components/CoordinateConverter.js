@@ -4,10 +4,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { raDecConverter } from '../utils/coordinateParser';
 import { TopBar } from './TopBar';
 import { useConverterOptions } from '../hooks/useConverterOptions';
-import { getSingleError, computeMatchedPrecisions, scaleErrorString } from '../utils/precisionHandling';
+import { computeMatchedPrecisions} from '../utils/precisionHandling';
 import { 
   postprocessHmsDms, 
-  getPlaceholderExamples 
 } from '../utils/formatHandling';
 import { ActionButtons } from './ActionButtons';
 import { Messages } from './Messages';

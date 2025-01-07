@@ -13,7 +13,7 @@ export function useConverterOptions() {
     if (precision === 'match') {
       return {
         type: 'match',
-        message: 'Matched to precision of first input line'
+        message: 'Output precision matched to input precision'
       };
     }
     return {
@@ -27,7 +27,9 @@ export function useConverterOptions() {
     outputFormat,
     internalDelimiter: outputFormat === 'hmsdms' ? internalDelimiter : ' ',
     raDecDelimiter: outputDelimiter,
-  }), [inputFormat, outputFormat, internalDelimiter, outputDelimiter]);
+    precision,
+    matchPrecision: precision === 'match'
+  }), [inputFormat, outputFormat, internalDelimiter, outputDelimiter, precision]);
 
   return {
     // Format options

@@ -1,13 +1,10 @@
 // ./components/CoordinateConverter.js
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { raDecConverter } from '../utils/coordinateParser';
 import { TopBar } from './TopBar';
 import { useConverterOptions } from '../hooks/useConverterOptions';
 import { computeMatchedPrecisions} from '../utils/precisionHandling';
-import { 
-  postprocessHmsDms, 
-} from '../utils/formatHandling';
 import { ActionButtons } from './ActionButtons';
 import { Messages } from './Messages';
 import { InputEditor } from './InputEditor';
@@ -20,6 +17,11 @@ const CoordinateConverter = () => {
   const [hoveredLine, setHoveredLine] = useState(null);
   const [hoveredCopyType, setHoveredCopyType] = useState(null);
   const { handleInputScroll, handleOutputScroll } = useSyncedScroll();
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const [removedLines, setRemovedLines] = useState({ headerLines: [], trailingWhitespaceCount: 0 });
+
+  // Create a ref to store the last hover position to avoid unnecessary updates
+  const lastHoverRef = useRef(null);
 
   const {
     inputFormat,
@@ -77,10 +79,6 @@ const CoordinateConverter = () => {
           raPrecision: raPrec,
           decPrecision: decPrec
         });
-        // postprocess for letters
-        if (outputFormat === 'hmsdms' && internalDelimiter === 'hms') {
-          out = postprocessHmsDms(out, 'hms');
-        }
         return { output: out, error: null };
       } catch (err) {
         return { output: '', error: err.message };
@@ -113,6 +111,64 @@ const CoordinateConverter = () => {
     );
   }, [precision, inputFormat, outputFormat, detectedRaPrecision, detectedDecPrecision]);
 
+  const handleScroll = (scrollTop) => {
+    setScrollPosition(scrollTop);
+    
+    // Synchronize scroll position
+    const textarea = document.querySelector('textarea');
+    const outputPanel = document.querySelector('.output-scroll');
+    const inputLineNumbers = textarea?.previousSibling;
+    const outputLineNumbers = outputPanel?.previousSibling;
+    
+    if (textarea) textarea.scrollTop = scrollTop;
+    if (outputPanel) outputPanel.scrollTop = scrollTop;
+    if (inputLineNumbers) inputLineNumbers.scrollTop = scrollTop;
+    if (outputLineNumbers) outputLineNumbers.scrollTop = scrollTop;
+  };
+
+  const handleMouseMove = useCallback((e, containerType) => {
+    const lineHeight = 24;
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    
+    // Calculate position relative to visible area
+    const relativeY = e.clientY - rect.top;
+    const visibleLineIndex = Math.floor((relativeY + container.scrollTop) / lineHeight);
+    
+    const maxLines = containerType === 'input' 
+      ? inputText.split('\n').length 
+      : results.length;
+    
+    // Only update if we're hovering over a valid line and it's different from the last position
+    if (visibleLineIndex >= 0 && visibleLineIndex < maxLines && lastHoverRef.current !== visibleLineIndex) {
+      lastHoverRef.current = visibleLineIndex;
+      setHoveredLine(visibleLineIndex);
+    } else if (visibleLineIndex < 0 || visibleLineIndex >= maxLines) {
+      lastHoverRef.current = null;
+      setHoveredLine(null);
+    }
+  }, [inputText, results.length]);
+
+  const handleMouseLeave = useCallback(() => {
+    lastHoverRef.current = null;
+    setHoveredLine(null);
+  }, []);
+
+  const handleInputChange = (newValue, removedInfo) => {
+    setInputText(newValue);
+    setRemovedLines(removedInfo);
+  };
+
+  // Log state changes
+  useEffect(() => {
+    console.log('CoordinateConverter state:', {
+      outputFormat,
+      outputDelimiter,
+      precision,
+      matchPrecision: precision === 'match',
+      internalDelimiter
+    });
+  }, [outputFormat, outputDelimiter, precision, internalDelimiter]);
 
   return (
     <div className="max-w-6xl mx-auto p-4 h-screen flex flex-col">
@@ -136,6 +192,7 @@ const CoordinateConverter = () => {
           precision={precision}
           results={results}
           matchedPrecisions={matchedPrecisions}
+          removedLines={removedLines}
         />
 
         <div className="flex gap-4 flex-grow overflow-hidden">
@@ -144,21 +201,27 @@ const CoordinateConverter = () => {
             inputFormat={inputFormat}
             internalDelimiter={internalDelimiter}
             hoveredLine={hoveredLine}
-            onInputChange={setInputText}
-            onHover={setHoveredLine}
-            onHoverEnd={() => setHoveredLine(null)}
-            onScroll={handleInputScroll}
+            scrollPosition={scrollPosition}
+            onInputChange={handleInputChange}
+            onScroll={handleScroll}
+            onMouseMove={(e) => handleMouseMove(e, 'input')}
+            onMouseLeave={handleMouseLeave}
           />
 
           <OutputPanel 
             inputText={inputText}
             results={results}
             inputFormat={inputFormat}
+            outputFormat={outputFormat}
             outputDelimiter={outputDelimiter}
+            precision={precision}
+            matchPrecision={precision === 'match'}
+            internalDelimiter={internalDelimiter}
             hoveredLine={hoveredLine}
-            onHover={setHoveredLine}
-            onHoverEnd={() => setHoveredLine(null)}
-            onScroll={handleOutputScroll}
+            scrollPosition={scrollPosition}
+            onScroll={handleScroll}
+            onMouseMove={(e) => handleMouseMove(e, 'output')}
+            onMouseLeave={handleMouseLeave}
           />
 
           <ActionButtons 
@@ -166,6 +229,21 @@ const CoordinateConverter = () => {
             outputDelimiter={outputDelimiter}
             onHoverChange={setHoveredCopyType}
           />
+        </div>
+
+        {/* Footer */}
+        <div className="text-center text-gray-500 py-4">
+          Batch Astronomical Coordinate Converter v1.0
+          <br />
+          Source code available on {' '}
+          <a 
+            href="https://github.com/Dillon-Z-Dong/astro-coord-conversion/" 
+            className="underline hover:text-gray-700"
+            target="_blank" 
+            rel="noopener noreferrer"
+          >
+            Github
+          </a>
         </div>
       </div>
     </div>

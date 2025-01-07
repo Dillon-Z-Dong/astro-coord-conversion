@@ -20,7 +20,7 @@ export const INTERNAL_DELIMITER_OPTIONS = [
 ];
 
 export const PRECISION_OPTIONS = [
-  { value: "match", label: "Match input" },
+  { value: "match", label: "Match input precision" },
   ...Array.from({ length: 11 }, (_, i) => ({
     value: String(i),
     label: `${i} digits`

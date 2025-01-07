@@ -1,48 +1,86 @@
 import { getPlaceholderExamples } from '../utils/formatHandling';
+import { useState } from 'react';
 
 export function InputEditor({
   inputText,
   inputFormat,
   internalDelimiter,
   hoveredLine,
+  scrollPosition,
   onInputChange,
-  onHover,
-  onHoverEnd,
   onScroll,
+  onMouseMove,
+  onMouseLeave,
 }) {
-  // Modify the input handler to strip trailing empty lines
   const handleInputChange = (e) => {
-    let newValue = e.target.value;
-    
-    // Strip trailing empty lines while preserving empty lines in the middle
-    newValue = newValue.replace(/[\n\r]+([\n\r]|\s)*$/, '');
-    
-    // Count number of lines
-    const lineCount = (newValue.match(/\n/g) || []).length + 1;
-    
-    if (lineCount > 5000) { // MAX_ROWS constant could be passed as prop
-      alert(`Maximum input is 5000 lines. Current input: ${lineCount} lines`);
-      return;
-    }
-    
-    onInputChange(newValue);
+    // For regular typing, just pass through the value
+    onInputChange(e.target.value, {
+      headerLines: [],
+      trailingWhitespaceCount: 0
+    });
   };
 
-  // Highlight style for hovering over lines
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text');
+    let lines = pastedText.split('\n');
+    
+    // Store header lines with their content
+    const headerLines = lines.filter(line => {
+      const trimmed = line.trim();
+      return trimmed && /^[A-Za-z\s]+$/.test(trimmed);
+    });
+    
+    // Remove header lines
+    lines = lines.filter(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return true; // Keep empty lines for now
+      return !/^[A-Za-z\s]+$/.test(trimmed);
+    });
+    
+    // Count trailing whitespace lines
+    const lastNonEmptyIndex = lines.reduceRight((acc, line, index) => {
+      if (acc === -1 && line.trim()) {
+        return index;
+      }
+      return acc;
+    }, -1);
+    
+    const trailingWhitespaceCount = lastNonEmptyIndex === -1 ? 0 : 
+      lines.length - (lastNonEmptyIndex + 1);
+    
+    // Keep only up to the last non-empty line
+    if (lastNonEmptyIndex !== -1) {
+      lines = lines.slice(0, lastNonEmptyIndex + 1);
+    }
+
+    // Get the current cursor position
+    const cursorPos = e.target.selectionStart;
+    
+    // Combine existing text with pasted text
+    const newValue = inputText.slice(0, cursorPos) + 
+                    lines.join('\n') + 
+                    inputText.slice(e.target.selectionEnd);
+    
+    onInputChange(newValue, {
+      headerLines,
+      trailingWhitespaceCount
+    });
+  };
+
   const highlightStyle = hoveredLine === null ? {} : {
     backgroundImage: `linear-gradient(
       rgba(59, 130, 246, 0.1),
       rgba(59, 130, 246, 0.1)
     )`,
     backgroundSize: `100% 24px`,
-    backgroundPosition: `0 ${hoveredLine * 24}px`,
+    backgroundPosition: `0 ${(hoveredLine * 24) - scrollPosition}px`,
     backgroundRepeat: 'no-repeat'
   };
 
   return (
     <div className="w-[45%] relative border rounded shadow-sm overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-12 bg-gray-100 border-r overflow-hidden">
-        {/* Line numbers */}
         {inputText ? 
           inputText.split('\n').map((_, i) => (
             <div
@@ -51,8 +89,6 @@ export function InputEditor({
                 px-2 text-right text-gray-500 leading-6 text-base
                 ${hoveredLine === i ? 'bg-blue-50' : ''}
               `}
-              onMouseEnter={() => onHover(i)}
-              onMouseLeave={onHoverEnd}
             >
               {i + 1}
             </div>
@@ -71,20 +107,10 @@ export function InputEditor({
       <textarea
         value={inputText}
         onChange={handleInputChange}
-        onMouseMove={e => {
-          const lineHeight = 24;
-          const rect = e.target.getBoundingClientRect();
-          const relativeY = e.clientY - rect.top;
-          const lineIndex = Math.floor(relativeY / lineHeight);
-          
-          if (lineIndex >= 0 && lineIndex < inputText.split('\n').length) {
-            onHover(lineIndex);
-          } else {
-            onHoverEnd();
-          }
-        }}
-        onMouseLeave={onHoverEnd}
-        onScroll={onScroll}
+        onPaste={handlePaste}
+        onScroll={(e) => onScroll(e.target.scrollTop)}
+        onMouseMove={onMouseMove}
+        onMouseLeave={onMouseLeave}
         placeholder={getPlaceholderExamples(inputFormat, internalDelimiter)}
         className="w-full h-full pl-14 pr-4 font-mono resize-none text-base leading-6 whitespace-pre overflow-x-auto"
         style={{
@@ -93,9 +119,6 @@ export function InputEditor({
           minHeight: '100%'
         }}
         spellCheck="false"
-        data-gramm="false"
-        data-gramm_editor="false"
-        data-enable-grammarly="false"
       />
     </div>
   );

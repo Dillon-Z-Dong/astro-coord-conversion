@@ -1,44 +1,98 @@
+import { useMemo } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { displayDelimiter, getPlaceholderExamples } from '../utils/formatHandling';
+import { raDecConverter } from '../utils/coordinateParser';
 
 export function OutputPanel({
   inputText,
   results,
-  inputFormat,
-  outputDelimiter,
+  inputFormat = 'decimal',
+  outputFormat = 'degrees',
+  outputDelimiter = ' ',
+  precision = 2,
+  matchPrecision = false,
+  internalDelimiter = ' ',
   hoveredLine,
-  onHover,
-  onHoverEnd,
+  scrollPosition,
   onScroll,
+  onMouseMove,
+  onMouseLeave,
 }) {
-  // Generate virtual line numbers based on results length
-  const virtualLineNumbers = Array.from(
-    { length: results.length }, 
-    (_, i) => i + 1
-  );
+  // Add debug logging for incoming props
+  console.log('OutputPanel props:', {
+    precision,
+    matchPrecision,
+    typeof_precision: typeof precision
+  });
+
+  // Memoize placeholder outputs
+  const placeholderOutputs = useMemo(() => {
+    const examples = getPlaceholderExamples(inputFormat).split('\n');
+    return examples.map(example => {
+      try {
+        const converterOptions = {
+          inputFormat,
+          outputFormat,
+          raDecDelimiter: outputDelimiter,
+          internalDelimiter,
+          precision,
+          matchPrecision
+        };
+
+        // Add detailed debug logging
+        console.log('Converter options before call:', {
+          ...converterOptions,
+          typeof_precision: typeof converterOptions.precision,
+          precision_value: converterOptions.precision
+        });
+
+        let output;
+        if (outputFormat === 'hmsdms') {
+          output = raDecConverter(example.trim(), converterOptions);
+        } else if (outputFormat === 'degrees') {
+          output = raDecConverter(example.trim(), converterOptions);
+        } else if (outputFormat === 'casa') {
+          output = raDecConverter(example.trim(), converterOptions);
+        }
+
+        return output || '';
+      } catch (e) {
+        console.error('Error parsing placeholder:', e);
+        console.error('Converter options at error:', converterOptions);
+        console.error(e.stack);
+        return '';
+      }
+    });
+  }, [
+    inputFormat,
+    outputFormat,
+    outputDelimiter,
+    internalDelimiter,
+    precision,
+    matchPrecision
+  ]);
 
   return (
     <div className="w-[45%] relative border rounded shadow-sm overflow-hidden font-mono bg-white">
       <div className="h-full flex">
-        {/* Line Numbers */}
         <div className="w-12 bg-gray-100 border-r flex-none overflow-hidden">
           {inputText ? 
-            virtualLineNumbers.map((num, i) => (
+            results.map((_, i) => (
               <div
                 key={i}
                 className={`
                   px-2 text-right text-gray-500 leading-6 text-base
                   ${hoveredLine === i ? 'bg-blue-50' : ''}
-                `}
+                `}å
               >
-                {num}
+                {i + 1}
               </div>
             ))
             :
             getPlaceholderExamples(inputFormat).split('\n').map((_, i) => (
               <div
                 key={i}
-                className="px-2 text-right text-gray-300 leading-6 text-base"
+                className="px-2 text-right tåext-gray-300 leading-6 text-base"
               >
                 {i + 1}
               </div>
@@ -46,51 +100,54 @@ export function OutputPanel({
           }
         </div>
 
-        {/* Output Content */}
         <div
-          className="flex-grow overflow-y-auto overflow-x-auto output-scroll"
-          onScroll={onScroll}
+          className="flex-grow overflow-y-auto overflow-x-auto output-scroll relative"
+          onScroll={(e) => onScroll(e.target.scrollTop)}
+          onMouseMove={onMouseMove}
+          onMouseLeave={onMouseLeave}
         >
-          {inputText ? (
-            results.map((result, i) => (
-              <div
-                key={i}
-                className={`
-                  h-6 flex items-center px-4 whitespace-pre
-                  ${hoveredLine === i ? 'bg-blue-50' : ''}
-                  ${result.error ? 'text-red-500' : ''}
-                `}
-                onMouseEnter={() => onHover(i)}
-                onMouseLeave={onHoverEnd}
-              >
-                {result.error ? (
-                  <div className="flex items-center">
-                    <AlertCircle className="w-4 h-4 mr-2" />
-                    {result.error}
-                  </div>
-                ) : (
-                  result.output
-                )}
-              </div>
-            ))
-          ) : (
-            // Show processed placeholder examples when there's no input
-            getPlaceholderExamples(inputFormat).split('\n').map((example, i) => {
-              const tokens = example.split(/[\s,|]+/).filter(Boolean);
-              const raVal = tokens[0] || '';
-              const decVal = tokens[1] || '';
-              const delim = displayDelimiter(outputDelimiter);
-
-              return (
+          <div className="relative">
+            {hoveredLine !== null && (
+              <div 
+                className="absolute left-0 right-0 pointer-events-none"
+                style={{
+                  height: '24px',
+                  top: `${hoveredLine * 24}px`,
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)'
+                }}
+              />
+            )}
+            
+            {inputText ? (
+              results.map((result, i) => (
+                <div
+                  key={i}
+                  className={`
+                    h-6 flex items-center px-4 whitespace-pre relative
+                    ${result.error ? 'text-red-500' : ''}
+                  `}
+                >
+                  {result.error ? (
+                    <div className="flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-2" />
+                      {result.error}
+                    </div>
+                  ) : (
+                    result.output
+                  )}
+                </div>
+              ))
+            ) : (
+              placeholderOutputs.map((output, i) => (
                 <div
                   key={i}
                   className="h-6 flex items-center px-4 whitespace-pre text-gray-300"
                 >
-                  {raVal}{delim}{decVal}
+                  {output}
                 </div>
-              );
-            })
-          )}
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,7 @@
 // ./utils/coordinateParser.js
 
+import { computeMatchedPrecisions } from './precisionHandling';
+
 /**
  * Utility function: determines how many decimal places are in a numeric string.
  * E.g., "12.345" -> 3. If there's no decimal point, returns 0.
@@ -24,6 +26,8 @@ export function determinePrecision(valueStr) {
  * @param {boolean} options.decOnly            If true, only return Dec portion.
  * @param {number} options.raPrecision         Desired decimal precision for RA part (override).
  * @param {number} options.decPrecision        Desired decimal precision for Dec part (override).
+ * @param {object} options.precision         Desired decimal precision for RA and Dec parts (override).
+ * @param {boolean} options.matchPrecision    If true, match precision between input and output formats.
  * 
  * @returns {string} The converted coordinate (RA, Dec).
  */
@@ -36,10 +40,65 @@ export function raDecConverter(
     raDecDelimiter = '\t',
     raOnly = false,
     decOnly = false,
-    raPrecision = null,
-    decPrecision = null
+    precision = null,
+    matchPrecision = false
   } = {}
 ) {
+  // Validate required inputs
+  if (inputString === undefined) {
+    throw new Error('raDecConverter: inputString is required');
+  }
+  if (inputFormat === undefined) {
+    throw new Error('raDecConverter: inputFormat is required');
+  }
+  if (outputFormat === undefined) {
+    throw new Error('raDecConverter: outputFormat is required');
+  }
+  if (matchPrecision === undefined) {
+    throw new Error('raDecConverter: matchPrecision is required');
+  }
+
+  // When matchPrecision is true, we don't need a precision value
+  if (!matchPrecision && (precision === null || precision === undefined)) {
+    throw new Error('raDecConverter: precision is required when not matching precision');
+  }
+
+  // Handle string precision values
+  if (typeof precision === 'string') {
+    if (precision === 'match') {
+      // This is fine, we'll handle it in the precision logic
+    } else {
+      // Try to convert string to number
+      const numericPrecision = parseInt(precision, 10);
+      if (isNaN(numericPrecision)) {
+        throw new Error(`raDecConverter: invalid precision value "${precision}"`);
+      }
+      precision = numericPrecision;
+    }
+  } else if (typeof precision !== 'number' && typeof precision !== 'object') {
+    throw new Error(`raDecConverter: precision must be a number, "match", or precision object, got ${typeof precision}`);
+  }
+
+  // Validate format values
+  const validFormats = ['hmsdms', 'degrees', 'casa'];
+  if (!validFormats.includes(inputFormat)) {
+    throw new Error(`raDecConverter: invalid inputFormat "${inputFormat}"`);
+  }
+  if (!validFormats.includes(outputFormat)) {
+    throw new Error(`raDecConverter: invalid outputFormat "${outputFormat}"`);
+  }
+
+  // Log all inputs for debugging
+  console.log('raDecConverter inputs:', {
+    inputString,
+    inputFormat,
+    outputFormat,
+    internalDelimiter,
+    raDecDelimiter,
+    precision,
+    matchPrecision
+  });
+
   // Decide default internal delimiter if none provided
   if (internalDelimiter === null) {
     if (outputFormat === 'hmsdms') {
@@ -75,22 +134,58 @@ export function raDecConverter(
     throw new Error(`Dec must be [-90..+90]: ${decVal}`);
   }
 
-  // 4) Decide final precision
-  const finalRaPrecision = (raPrecision !== null) ? raPrecision : raInPrec;
-  const finalDecPrecision = (decPrecision !== null) ? decPrecision : decInPrec;
+  // Handle precision settings
+  let raPrecision, decPrecision;
+  
+  if (matchPrecision || precision === 'match') {
+    // For decimal to decimal, preserve input precision
+    if (inputFormat === 'degrees' && outputFormat === 'degrees') {
+      raPrecision = raInPrec;
+      decPrecision = decInPrec;
+    } else {
+      // Use computeMatchedPrecisions for format conversions
+      const { raOut, decOut } = computeMatchedPrecisions(
+        inputFormat,
+        outputFormat,
+        raInPrec,
+        decInPrec
+      );
+      raPrecision = raOut;
+      decPrecision = decOut;
+    }
+  } else if (typeof precision === 'object' && precision !== null) {
+    // Use explicitly provided precisions
+    raPrecision = precision.ra;
+    decPrecision = precision.dec;
+  } else {
+    // Use numeric precision for both
+    const numericPrecision = parseInt(precision, 10);
+    if (isNaN(numericPrecision)) {
+      throw new Error(`raDecConverter: invalid precision value "${precision}"`);
+    }
+    raPrecision = numericPrecision;
+    decPrecision = numericPrecision;
+  }
 
-  // 5) Format output based on desired output_format
+  // Only default to 0 if precision was explicitly set to null/undefined
+  // and we're not matching precision
+  if (!matchPrecision) {
+    raPrecision = raPrecision ?? 0;
+    decPrecision = decPrecision ?? 0;
+  }
+
+  // 4) Format output based on desired output_format
   let raStr, decStr;
   if (outputFormat === 'degrees') {
-    raStr = formatDegrees(raVal, finalRaPrecision, false);
-    decStr = formatDegrees(decVal, finalDecPrecision, true);
+    raStr = formatDegrees(raVal, raPrecision, false);
+    decStr = formatDegrees(decVal, decPrecision, true);
   } else if (outputFormat === 'hmsdms') {
-    raStr = degreesToHms(raVal, finalRaPrecision, internalDelimiter);
-    decStr = degreesToDms(decVal, finalDecPrecision, internalDelimiter);
+    raStr = degreesToHms(raVal, raPrecision, internalDelimiter);
+    decStr = degreesToDms(decVal, decPrecision, internalDelimiter);
   } else {
     // 'casa'
-    raStr = degreesToHms(raVal, finalRaPrecision, ':');
-    decStr = degreesToCasaDec(decVal, finalDecPrecision);
+    raStr = degreesToHms(raVal, raPrecision, ':');
+    decStr = degreesToCasaDec(decVal, decPrecision);
   }
 
   if (raOnly) return raStr;
@@ -312,7 +407,7 @@ function formatDegrees(value, precision, forceSign = false) {
 }
 
 /**
- * Convert degrees => "HH:MM:SS" with given precision in the seconds.
+ * Convert degrees => "HH:MM:SS" or "HHhMMmSSs" with given precision in the seconds.
  */
 function degreesToHms(degVal, precision = 2, delimiter = ':') {
   const hours = (degVal / 15.0) % 24;
@@ -329,11 +424,16 @@ function degreesToHms(degVal, precision = 2, delimiter = ':') {
   const hhStr = hh.toString().padStart(2, '0');
   const mmStr = mm.toString().padStart(2, '0');
 
+  // Handle letter format
+  if (delimiter === 'hms') {
+    return `${hhStr}h${mmStr}m${sStr}s`;
+  }
+  
   return `${hhStr}${delimiter}${mmStr}${delimiter}${sStr}`;
 }
 
 /**
- * Convert degrees => "±DD:MM:SS" with given precision in the seconds.
+ * Convert degrees => "±DD:MM:SS" or "±DDdMMmSSs" with given precision in the seconds.
  */
 function degreesToDms(degVal, precision = 2, delimiter = ':') {
   const sign = degVal < 0 ? '-' : '+';
@@ -349,6 +449,11 @@ function degreesToDms(degVal, precision = 2, delimiter = ':') {
   const ddStr = dd.toString().padStart(2, '0');
   const mmStr = mm.toString().padStart(2, '0');
   const sStr = twoDigitLeft(ss, precision);
+
+  // Handle letter format
+  if (delimiter === 'hms') {
+    return `${sign}${ddStr}d${mmStr}m${sStr}s`;
+  }
 
   return `${sign}${ddStr}${delimiter}${mmStr}${delimiter}${sStr}`;
 }

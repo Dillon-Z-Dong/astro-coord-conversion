@@ -6,7 +6,8 @@ export function Messages({
   outputFormat,
   precision,
   results,
-  matchedPrecisions
+  matchedPrecisions,
+  removedLines
 }) {
   // Helper function to compute input stats
   const getInputStats = () => {
@@ -51,10 +52,22 @@ export function Messages({
             <>
               <span className="text-gray-700">
                 {stats.totalLines} input coordinate{stats.totalLines !== 1 ? 's' : ''} detected [{inputFormat}]
+                {(removedLines.headerLines.length > 0 || removedLines.trailingWhitespaceCount > 0) && (
+                  <span 
+                    className="text-gray-500 ml-2 cursor-help"
+                    title={`${removedLines.headerLines.length > 0 
+                      ? `Removed header line(s):\n${removedLines.headerLines.join('\n')}\n\n` 
+                      : ''}${removedLines.trailingWhitespaceCount > 0
+                      ? `Removed ${removedLines.trailingWhitespaceCount} trailing blank line${removedLines.trailingWhitespaceCount !== 1 ? 's' : ''}`
+                      : ''}`}
+                  >
+              [cleaned input]
+                  </span>
+                )}
               </span>
               {stats.errorCount > 0 && (
                 <button
-                  onClick={scrollToFirstError}  // Now using local function
+                  onClick={scrollToFirstError}
                   className="text-red-500 ml-1 hover:underline focus:outline-none"
                 >
                   ({stats.errorCount} error{stats.errorCount !== 1 ? 's' : ''})

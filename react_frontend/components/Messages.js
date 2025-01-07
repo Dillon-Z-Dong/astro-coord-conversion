@@ -47,7 +47,7 @@ export function Messages({
       <div className="w-[45%] text-sm pl-12 font-italic min-h-[24px]">
         <span className="text-gray-500 block">
           {!inputText ? (
-            "Input RA/Dec (one per line, many formats accepted)"
+            "Paste or type RAs/Decs (one per line)"
           ) : (
             <>
               <span className="text-gray-700">
@@ -81,7 +81,7 @@ export function Messages({
       {/* Output Message */}
       <div className="w-[45%] text-sm text-gray-500 pl-8 mb-0.5 font-italic min-h-[24px]">
         {!inputText ? (
-          'Output RA/Dec (formatted based on selections above)'
+          'Converted coordinates will appear here (based on selections above)'
         ) : (
           <>
             Requested output format: [{outputFormat}] [{precision === 'match' ? (

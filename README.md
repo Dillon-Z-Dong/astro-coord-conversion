@@ -7,5 +7,4 @@ https://dillon-z-dong.github.io/astro-coord-conversion/
 
 Todo:
 - Conversions to galactic, ecliptic coordinates
-- performance improvements for large sets of coordinates
-- fix line highlighting in UI
+- More informative messages in message box

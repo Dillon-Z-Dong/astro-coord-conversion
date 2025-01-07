@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { displayDelimiter, getPlaceholderExamples } from '../utils/formatHandling';
+import { displayDelimiter, getPlaceholderExamples, splitByOutputDelimiter } from '../utils/formatHandling';
 import { raDecConverter } from '../utils/coordinateParser';
 
 export function OutputPanel({
@@ -17,6 +17,7 @@ export function OutputPanel({
   onScroll,
   onMouseMove,
   onMouseLeave,
+  hoveredCopyType,
 }) {
   // Add debug logging for incoming props
   console.log('OutputPanel props:', {
@@ -72,6 +73,33 @@ export function OutputPanel({
     matchPrecision
   ]);
 
+  const renderOutput = (result, index) => {
+    if (result.error) {
+      return (
+        <div className="flex items-center">
+          <AlertCircle className="w-4 h-4 mr-2" />
+          {result.error}
+        </div>
+      );
+    }
+
+    // Split the output into RA and Dec parts
+    const [ra, dec] = splitByOutputDelimiter(result.output, outputDelimiter);
+    const delimiter = displayDelimiter(outputDelimiter);
+
+    return (
+      <>
+        <span className={hoveredCopyType === 'all' || hoveredCopyType === 'ra' ? 'bg-purple-100' : ''}>
+          {ra}
+        </span>
+        <span className="mx-0">{delimiter}</span>
+        <span className={hoveredCopyType === 'all' || hoveredCopyType === 'dec' ? 'bg-purple-100' : ''}>
+          {dec}
+        </span>
+      </>
+    );
+  };
+
   return (
     <div className="w-[45%] relative border rounded shadow-sm overflow-hidden font-mono bg-white">
       <div className="h-full flex">
@@ -83,7 +111,7 @@ export function OutputPanel({
                 className={`
                   px-2 text-right text-gray-500 leading-6 text-base
                   ${hoveredLine === i ? 'bg-blue-50' : ''}
-                `}å
+                `}
               >
                 {i + 1}
               </div>
@@ -92,7 +120,7 @@ export function OutputPanel({
             getPlaceholderExamples(inputFormat).split('\n').map((_, i) => (
               <div
                 key={i}
-                className="px-2 text-right tåext-gray-300 leading-6 text-base"
+                className="px-2 text-right text-gray-300 leading-6 text-base"
               >
                 {i + 1}
               </div>
@@ -127,14 +155,7 @@ export function OutputPanel({
                     ${result.error ? 'text-red-500' : ''}
                   `}
                 >
-                  {result.error ? (
-                    <div className="flex items-center">
-                      <AlertCircle className="w-4 h-4 mr-2" />
-                      {result.error}
-                    </div>
-                  ) : (
-                    result.output
-                  )}
+                  {renderOutput(result, i)}
                 </div>
               ))
             ) : (

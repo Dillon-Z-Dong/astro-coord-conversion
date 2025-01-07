@@ -222,6 +222,7 @@ const CoordinateConverter = () => {
             onScroll={handleScroll}
             onMouseMove={(e) => handleMouseMove(e, 'output')}
             onMouseLeave={handleMouseLeave}
+            hoveredCopyType={hoveredCopyType}
           />
 
           <ActionButtons 

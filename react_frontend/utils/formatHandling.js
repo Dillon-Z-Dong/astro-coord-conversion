@@ -1,11 +1,23 @@
-
 /**
  * Split output by the chosen delimiter
  */
 export function splitByOutputDelimiter(str, delimiter) {
+  if (!str) return ['', ''];
+  
   if (delimiter === ' | ') return str.split(' | ');
   if (delimiter === '\t') return str.split('\t');
   if (delimiter === ',') return str.split(',');
+  
+  // Special handling for space delimiter
+  if (delimiter === ' ') {
+    // Look for the sign character (+/-) that typically starts Dec values
+    const match = str.match(/^(.*?)\s+([+\-].*)$/);
+    if (match) {
+      return [match[1], match[2]];
+    }
+  }
+  
+  // Default fallback
   return str.trim().split(/\s+/);
 }
 

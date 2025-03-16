@@ -1,7 +1,5 @@
 import unittest
 from math import isclose
-
-# Suppose your parser is in coordinate_parser.py
 from coordinate_parser import ra_dec_converter
 
 class TestCoordinateParser(unittest.TestCase):

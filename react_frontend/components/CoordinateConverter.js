@@ -325,7 +325,7 @@ const CoordinateConverter = () => {
           <br />
           Source code available on {' '}
           <a 
-            href="https://github.com/Dillon-Z-Dong/astro-coord-conversion/" 
+            href="https://github.com/Dillon-Z-Dong/astro-coord-conversion/tree/main/react_frontend" 
             className="underline hover:text-gray-700"
             target="_blank" 
             rel="noopener noreferrer"

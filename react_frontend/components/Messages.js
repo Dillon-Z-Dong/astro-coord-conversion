@@ -7,7 +7,8 @@ export function Messages({
   precision,
   results,
   matchedPrecisions,
-  removedLines
+  removedLines,
+  isFormatAutoDetected
 }) {
   // Helper function to compute input stats
   const getInputStats = () => {
@@ -51,7 +52,10 @@ export function Messages({
           ) : (
             <>
               <span className="text-gray-700">
-                {stats.totalLines} input coordinate{stats.totalLines !== 1 ? 's' : ''} detected [{inputFormat}]
+                {stats.totalLines} input coordinate{stats.totalLines !== 1 ? 's' : ''} [{inputFormat}
+                {isFormatAutoDetected && (
+                  <span className="text-purple-600 font-medium"> auto-detected</span>
+                )}]
                 {(removedLines.headerLines.length > 0 || removedLines.trailingWhitespaceCount > 0) && (
                   <span 
                     className="text-gray-500 ml-2 cursor-help"
@@ -61,7 +65,7 @@ export function Messages({
                       ? `Removed ${removedLines.trailingWhitespaceCount} trailing blank line${removedLines.trailingWhitespaceCount !== 1 ? 's' : ''}`
                       : ''}`}
                   >
-              [cleaned input]
+                    [cleaned input]
                   </span>
                 )}
               </span>

@@ -1,9 +1,9 @@
 // constants/converterOptions.js
 
 export const FORMAT_OPTIONS = [
-  { value: 'hmsdms', label: 'HMS/DMS' },
   { value: 'degrees', label: 'Decimal Degrees' },
-  { value: 'casa', label: 'CASA Format' }
+  { value: 'hmsdms', label: 'HMS/DMS' },
+  { value: 'casa', label: 'CASA Format' },
 ];
 
 export const DELIMITER_OPTIONS = [

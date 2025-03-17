@@ -19,6 +19,7 @@ const CoordinateConverter = () => {
   const { handleInputScroll, handleOutputScroll } = useSyncedScroll();
   const [scrollPosition, setScrollPosition] = useState(0);
   const [removedLines, setRemovedLines] = useState({ headerLines: [], trailingWhitespaceCount: 0 });
+  const [isFormatAutoDetected, setIsFormatAutoDetected] = useState(false);
 
   // Create a ref to store the last hover position to avoid unnecessary updates
   const lastHoverRef = useRef(null);
@@ -51,7 +52,6 @@ const CoordinateConverter = () => {
   /**
    * Convert all lines in the input whenever relevant settings change.
    */
-  // Update processInput to use converterOptions
   const processInput = useCallback(() => {
     const lines = inputText.split('\n');
 
@@ -69,6 +69,10 @@ const CoordinateConverter = () => {
       decPrec = p;
     }
 
+    // No need for format conversion - use directly
+    const parserInputFormat = inputFormat;
+    const parserOutputFormat = outputFormat;
+
     const newResults = lines.map(line => {
       const trimmed = line.trim();
       if (!trimmed) return { output: '', error: null };
@@ -76,6 +80,8 @@ const CoordinateConverter = () => {
       try {
         let out = raDecConverter(trimmed, {
           ...converterOptions,
+          inputFormat: parserInputFormat,
+          outputFormat: parserOutputFormat,
           raPrecision: raPrec,
           decPrecision: decPrec
         });
@@ -92,6 +98,7 @@ const CoordinateConverter = () => {
     detectedRaPrecision,
     detectedDecPrecision,
     outputFormat,
+    inputFormat,
     internalDelimiter
   ]);
 
@@ -170,6 +177,80 @@ const CoordinateConverter = () => {
     });
   }, [outputFormat, outputDelimiter, precision, internalDelimiter]);
 
+  /**
+   * Detects the best input format by testing each format and counting errors
+   * @param {string} inputTextToDetect - The input text to analyze
+   * @returns {string|null} - The detected format or null if detection failed
+   */
+  const detectBestInputFormat = useCallback((inputTextToDetect) => {
+    // Only process up to 100 coordinates for detection
+    const lines = inputTextToDetect.split('\n')
+      .filter(line => line.trim()) // Filter out empty lines
+      .slice(0, 100);
+      
+    if (lines.length === 0) return null;
+    
+    // Try each format and count errors
+    const formats = ['degrees', 'casa', 'hmsdms'];
+    const uiFormats = ['degrees', 'casa', 'hmsdms']; // Updated to use 'degrees' instead of 'decimal'
+    const errorCounts = {};
+    
+    for (let i = 0; i < formats.length; i++) {
+      const format = formats[i];
+      const uiFormat = uiFormats[i];
+      let errorCount = 0;
+      
+      for (const line of lines) {
+        if (!line.trim()) continue; // Skip empty lines
+        
+        try {
+          // Use the same converter but just to test if it parses without error
+          raDecConverter(line, {
+            inputFormat: format,
+            outputFormat: 'degrees',
+            raDecDelimiter: ' ',
+            internalDelimiter: ' ',
+            precision: 4
+          });
+        } catch (error) {
+          errorCount++;
+        }
+      }
+      
+      errorCounts[uiFormat] = errorCount;
+    }
+    
+    // Find the format with fewest errors
+    const bestFormat = Object.entries(errorCounts)
+      .sort((a, b) => a[1] - b[1])
+      [0][0];
+      
+    console.log('Auto-detected format:', bestFormat, 'Error counts:', errorCounts);
+    
+    return bestFormat;
+  }, []);
+
+  /**
+   * Handles auto-detection of input format when first data is entered
+   * @param {string} textToDetect - The input text to analyze
+   */
+  const handleAutoDetectFormat = useCallback((textToDetect) => {
+    const detectedFormat = detectBestInputFormat(textToDetect);
+    if (detectedFormat && detectedFormat !== inputFormat) {
+      console.log(`Auto-detected format: ${detectedFormat}, changing from ${inputFormat}`);
+      optionSetters.setInputFormat(detectedFormat);
+      setIsFormatAutoDetected(true);
+    }
+  }, [detectBestInputFormat, inputFormat, optionSetters]);
+
+  // Manual format change detection
+  const handleManualFormatChange = useCallback((newFormat) => {
+    if (isFormatAutoDetected) {
+      setIsFormatAutoDetected(false);
+    }
+    optionSetters.setInputFormat(newFormat);
+  }, [isFormatAutoDetected, optionSetters]);
+
   return (
     <div className="max-w-6xl mx-auto p-4 h-screen flex flex-col">
       <div className="h-[85vh] flex flex-col">
@@ -182,7 +263,11 @@ const CoordinateConverter = () => {
             precision,
             precisionExplanation
           }}
-          onOptionsChange={optionSetters}
+          onOptionsChange={{
+            ...optionSetters,
+            setInputFormat: handleManualFormatChange
+          }}
+          isFormatAutoDetected={isFormatAutoDetected}
         />
 
         <Messages 
@@ -193,6 +278,7 @@ const CoordinateConverter = () => {
           results={results}
           matchedPrecisions={matchedPrecisions}
           removedLines={removedLines}
+          isFormatAutoDetected={isFormatAutoDetected}
         />
 
         <div className="flex gap-4 flex-grow overflow-hidden">
@@ -206,6 +292,7 @@ const CoordinateConverter = () => {
             onScroll={handleScroll}
             onMouseMove={(e) => handleMouseMove(e, 'input')}
             onMouseLeave={handleMouseLeave}
+            onAutoDetectFormat={handleAutoDetectFormat}
           />
 
           <OutputPanel 

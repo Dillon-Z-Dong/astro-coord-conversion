@@ -30,23 +30,29 @@ export function OutputPanel({
   const placeholderOutputs = useMemo(() => {
     const examples = getPlaceholderExamples(inputFormat).split('\n');
     return examples.map(example => {
+      // Use parser format names directly - no conversion needed
+      const parserInputFormat = inputFormat;
+      const parserOutputFormat = outputFormat;
+      
+      const converterOptions = {
+        inputFormat: parserInputFormat,
+        outputFormat: parserOutputFormat,
+        raDecDelimiter: outputDelimiter,
+        internalDelimiter,
+        precision,
+        matchPrecision
+      };
+
+      // Add detailed debug logging
+      console.log('Converter options before call:', {
+        ...converterOptions,
+        typeof_precision: typeof converterOptions.precision,
+        precision_value: converterOptions.precision
+      });
+      
       try {
-        const converterOptions = {
-          inputFormat,
-          outputFormat,
-          raDecDelimiter: outputDelimiter,
-          internalDelimiter,
-          precision,
-          matchPrecision
-        };
-
-        // Add detailed debug logging
-        console.log('Converter options before call:', {
-          ...converterOptions,
-          typeof_precision: typeof converterOptions.precision,
-          precision_value: converterOptions.precision
-        });
-
+        if (!example.trim()) return ''; // Skip empty lines
+        
         let output;
         if (outputFormat === 'hmsdms') {
           output = raDecConverter(example.trim(), converterOptions);

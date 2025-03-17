@@ -11,13 +11,28 @@ export function InputEditor({
   onScroll,
   onMouseMove,
   onMouseLeave,
+  onAutoDetectFormat,
 }) {
+  const [isFirstInput, setIsFirstInput] = useState(true);
+
   const handleInputChange = (e) => {
     // For regular typing, just pass through the value
     onInputChange(e.target.value, {
       headerLines: [],
       trailingWhitespaceCount: 0
     });
+  };
+
+  const processInputForAutoDetection = (newValue) => {
+    // Only attempt auto-detection if this is the first input
+    if (isFirstInput && newValue.trim() !== '') {
+      setIsFirstInput(false);
+      
+      // Initiate format auto-detection if there's content
+      if (newValue.trim()) {
+        onAutoDetectFormat(newValue);
+      }
+    }
   };
 
   const handlePaste = (e) => {
@@ -66,6 +81,16 @@ export function InputEditor({
       headerLines,
       trailingWhitespaceCount
     });
+    
+    // Try to auto-detect format if this is the first input
+    processInputForAutoDetection(newValue);
+  };
+  
+  const handleKeyDown = (e) => {
+    // Detect Enter key press when input has content
+    if (e.key === 'Enter' && isFirstInput && inputText.trim() !== '') {
+      processInputForAutoDetection(inputText);
+    }
   };
 
   const highlightStyle = hoveredLine === null ? {} : {
@@ -108,6 +133,7 @@ export function InputEditor({
         value={inputText}
         onChange={handleInputChange}
         onPaste={handlePaste}
+        onKeyDown={handleKeyDown}
         onScroll={(e) => onScroll(e.target.scrollTop)}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}

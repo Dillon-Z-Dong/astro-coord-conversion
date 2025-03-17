@@ -25,6 +25,11 @@ export function TopBar({ options, onOptionsChange }) {
     setPrecision
   } = onOptionsChange;
 
+  // When a user clicks directly on a radio button, it's a manual change
+  const handleManualInputFormatChange = (e) => {
+    setInputFormat(e.target.value);
+  };
+
   return (
     <div className="grid grid-cols-4 gap-4 bg-white p-4 rounded shadow">
       {/* Input Format */}
@@ -37,7 +42,7 @@ export function TopBar({ options, onOptionsChange }) {
                 type="radio"
                 value={opt.value}
                 checked={inputFormat === opt.value}
-                onChange={e => setInputFormat(e.target.value)}
+                onChange={handleManualInputFormatChange}
                 className="w-4 h-4"
               />
               <span className="text-sm">{opt.label}</span>
